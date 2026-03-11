@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8001:1337"
+    environment:
+      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DUNEDAIN_CACHE_DIR=/data/cache
+      - ALLOWED_ORIGINS=http://localhost,http://localhost:3000,http://frontend
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - dunedain-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1337/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build: ./backend
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=8 -Q scans
+    environment:
+      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DUNEDAIN_CACHE_DIR=/data/cache
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - dunedain-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+
+  beat:
+    build: ./backend
+    command: celery -A app.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule /data/celerybeat-schedule
+    environment:
+      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DUNEDAIN_CACHE_DIR=/data/cache
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - dunedain-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  dunedain-data:
