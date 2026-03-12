@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Plus, X, ScanLine, Container, Trash2, RotateCcw,
-  ChevronDown, ChevronRight, FileCode, FolderOpen, Search, Server,
+  ChevronDown, ChevronRight, FileCode, FolderOpen, Search, Server, Users,
 } from 'lucide-react';
 import { getScans, createScan, deleteScan, rerunScan } from '../api/scans';
 import { type Scan } from '../types';
@@ -271,6 +271,8 @@ function GroupCard({ group, onRerun, onDelete, rerunPending }: GroupCardProps) {
   const [collapsed, setCollapsed] = useState(group.scans.length > 1);
   const latest    = group.scans[0];
   const baseImage = group.scans.find(s => s.base_image)?.base_image ?? null;
+  const teamName  = latest.team_name ?? null;
+  const teamId    = latest.team_id ?? null;
   const hasMany   = group.scans.length > 1;
   const visible   = collapsed ? [latest] : group.scans;
 
@@ -324,6 +326,23 @@ function GroupCard({ group, onRerun, onDelete, rerunPending }: GroupCardProps) {
                   <Server size={9} />
                   {group.registry_name}
                 </span>
+              )}
+              {teamName && teamId && (
+                <Link
+                  to={`/teams/${teamId}/dashboard`}
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                    background: 'rgba(99,102,241,0.12)', color: '#818cf8',
+                    border: '1px solid rgba(99,102,241,0.3)',
+                    display: 'flex', alignItems: 'center', gap: 3,
+                    flexShrink: 0,
+                    textDecoration: 'none',
+                  }}
+                >
+                  <Users size={9} />
+                  {teamName}
+                </Link>
               )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1, display: 'flex', gap: 6, flexWrap: 'wrap' }}>

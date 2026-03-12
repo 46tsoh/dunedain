@@ -14,6 +14,8 @@ interface Scan {
   base_image_chain: string[] | null;
   registry_id: string | null;
   registry_name: string | null;
+  team_id: string | null;
+  team_name: string | null;
   findings_count: number;
   critical_count: number;
   high_count: number;
@@ -153,4 +155,54 @@ interface Registry {
   repository_cache: Record<string, string[]> | null;
 }
 
-export type { Scan, Finding, Policy, PolicyRule, DashboardData, SBOMComponent, SBOM, PolicyResult, AuditLogEntry, OsvVulnerability, OsvAffectedPackage, Registry };
+interface OwnershipRule {
+  id: string;
+  team_id: string;
+  pattern: string;
+  scan_type: string | null;
+  priority: number;
+  description: string | null;
+  created_at: string;
+}
+
+interface Team {
+  id: string;
+  name: string;
+  description: string | null;
+  contact_email: string | null;
+  created_at: string;
+  updated_at: string;
+  ownership_rules: OwnershipRule[];
+  scan_count: number;
+}
+
+interface TeamFindingSummary {
+  finding_id: string;
+  vulnerability_id: string;
+  package_name: string;
+  package_version: string;
+  severity: string;
+  cvss_score: number | null;
+  risk_score: number;
+  is_fixed: boolean;
+  fix_version: string | null;
+  discovered_at: string;
+  scan_id: string;
+  scan_name: string;
+  sla_hours: number | null;
+  hours_elapsed: number;
+  sla_violated: boolean;
+}
+
+interface TeamDashboardData {
+  team: Team;
+  total_findings: number;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  sla_violations: number;
+  findings: TeamFindingSummary[];
+}
+
+export type { Scan, Finding, Policy, PolicyRule, DashboardData, SBOMComponent, SBOM, PolicyResult, AuditLogEntry, OsvVulnerability, OsvAffectedPackage, Registry, Team, OwnershipRule, TeamFindingSummary, TeamDashboardData };

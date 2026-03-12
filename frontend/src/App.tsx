@@ -11,6 +11,8 @@ import Settings from './pages/Settings';
 import Workers from './pages/Workers';
 import Registries from './pages/Registries';
 import SeedScans from './pages/SeedScans';
+import Teams from './pages/Teams';
+import TeamDashboard from './pages/TeamDashboard';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,6 +39,8 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="workers" element={<Workers />} />
             <Route path="registries" element={<Registries />} />
+            <Route path="teams" element={<Teams />} />
+            <Route path="teams/:teamId/dashboard" element={<TeamDashboard />} />
             <Route path="seed" element={<SeedScans />} />
           </Route>
         </Routes>

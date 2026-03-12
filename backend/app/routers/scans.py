@@ -24,6 +24,7 @@ from ..schemas import (
 )
 from ..tasks.scan import run_scan
 from ..services.scanner import _get_scanner_preference
+from ..routers.teams import resolve_team_for_target
 from ..celery_app import celery_app
 
 router = APIRouter(prefix="/scans", tags=["scans"])
@@ -41,6 +42,12 @@ def create_scan(payload: ScanCreate, db: Session = Depends(get_db)):
         scanner_override = _get_scanner_preference()
     else:
         scanner_override = None
+
+    # Resolve owning team: explicit team_id from payload, or auto-match via ownership rules
+    team_id = payload.team_id
+    if not team_id:
+        team_id = resolve_team_for_target(db, payload.target, payload.scan_type)
+
     scan = scan_repo.save(
         Scan(
             id=str(uuid4()),
@@ -51,6 +58,7 @@ def create_scan(payload: ScanCreate, db: Session = Depends(get_db)):
             packages=payload.packages,
             registry_id=payload.registry_id,
             scanner_override=scanner_override,
+            team_id=team_id,
         )
     )
 
@@ -87,6 +95,7 @@ def list_scans(
     for s in scans:
         findings = s.findings
         registry_name = s.registry.name if s.registry else None
+        team_name = s.team.name if s.team else None
         result.append(ScanSummary(
             id=s.id,
             name=s.name,
@@ -102,6 +111,8 @@ def list_scans(
             base_image_chain=s.base_image_chain,
             registry_id=s.registry_id,
             registry_name=registry_name,
+            team_id=s.team_id,
+            team_name=team_name,
             finding_count=len(findings),
             critical_count=sum(1 for f in findings if f.severity == "CRITICAL"),
             high_count=sum(1 for f in findings if f.severity == "HIGH"),
@@ -119,6 +130,7 @@ def get_scan(scan_id: str, db: Session = Depends(get_db)):
     findings = scan.findings
     count = len(findings)
     registry_name = scan.registry.name if scan.registry else None
+    team_name = scan.team.name if scan.team else None
     return ScanRead(
         id=scan.id,
         name=scan.name,
@@ -134,6 +146,8 @@ def get_scan(scan_id: str, db: Session = Depends(get_db)):
         base_image_chain=scan.base_image_chain,
         registry_id=scan.registry_id,
         registry_name=registry_name,
+        team_id=scan.team_id,
+        team_name=team_name,
         findings=[FindingRead.model_validate(f) for f in findings],
         finding_count=count,
         findings_count=count,

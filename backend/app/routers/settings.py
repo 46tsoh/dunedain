@@ -38,6 +38,45 @@ _KNOWN_SETTINGS: dict[str, tuple[str, str]] = {
         "'grype' feeds a Syft SBOM into Grype (default). "
         "'trivy' runs Trivy with --platform windows/amd64 (pe_version) or trivy fs (layer_extraction).",
     ),
+    "sla_critical_hours": (
+        "24",
+        "Global SLA: maximum hours to remediate CRITICAL-tier findings. "
+        "Used in both severity and CVSS modes.",
+    ),
+    "sla_high_hours": (
+        "72",
+        "Global SLA: maximum hours to remediate HIGH-tier findings. "
+        "Used in both severity and CVSS modes.",
+    ),
+    "sla_medium_hours": (
+        "168",
+        "Global SLA: maximum hours to remediate MEDIUM-tier findings. "
+        "Used in both severity and CVSS modes.",
+    ),
+    "sla_low_hours": (
+        "720",
+        "Global SLA: maximum hours to remediate LOW-tier findings. "
+        "Used in both severity and CVSS modes.",
+    ),
+    "sla_mode": (
+        "severity",
+        "SLA resolution mode. 'severity' assigns deadlines by finding severity level. "
+        "'cvss' assigns deadlines by CVSS score ranges (findings without a CVSS score fall "
+        "back to severity-based lookup).",
+    ),
+    "sla_cvss_critical_min": (
+        "9.0",
+        "Minimum CVSS score for the critical SLA tier (CVSS mode only).",
+    ),
+    "sla_cvss_high_min": (
+        "7.0",
+        "Minimum CVSS score for the high SLA tier (CVSS mode only).",
+    ),
+    "sla_cvss_medium_min": (
+        "4.0",
+        "Minimum CVSS score for the medium SLA tier (CVSS mode only). "
+        "Scores below this threshold use the low tier.",
+    ),
 }
 
 

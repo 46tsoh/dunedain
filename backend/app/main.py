@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, SessionLocal, SQLALCHEMY_DATABASE_URL, engine
 from .models import Policy
-from .routers import policies, reports, registries, sbom, scans, settings, vulns
+from .routers import policies, reports, registries, sbom, scans, settings, teams, vulns
 
 
 @asynccontextmanager
@@ -127,6 +127,7 @@ app.include_router(reports.router, prefix="/api")
 app.include_router(vulns.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(registries.router, prefix="/api")
+app.include_router(teams.router, prefix="/api")
 
 
 @app.get("/health", tags=["health"])

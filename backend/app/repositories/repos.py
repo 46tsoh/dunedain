@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import AuditLog, Finding, Policy, PolicyResult, AppSetting, Registry, Scan, SBOM
+from ..models import AuditLog, Finding, OwnershipRule, Policy, PolicyResult, AppSetting, Registry, Scan, SBOM, Team
 from .base import BaseRepository
 
 
@@ -207,3 +207,37 @@ class RegistryRepository(BaseRepository[Registry]):
         self.db.commit()
         self.db.refresh(reg)
         return reg
+
+
+class TeamRepository(BaseRepository[Team]):
+    model = Team
+
+    def list_all(self) -> list[Team]:
+        return self.list(order_by=Team.created_at.desc())
+
+    def get_by_name(self, name: str) -> Team | None:
+        return self.db.query(Team).filter(Team.name == name).first()
+
+    def scans_for_team(self, team_id: str, *, limit: int = 200) -> list[Scan]:
+        return (
+            self.db.query(Scan)
+            .filter(Scan.team_id == team_id)
+            .order_by(Scan.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+
+class OwnershipRuleRepository(BaseRepository[OwnershipRule]):
+    model = OwnershipRule
+
+    def list_all(self) -> list[OwnershipRule]:
+        return self.list(order_by=OwnershipRule.priority.desc())
+
+    def for_team(self, team_id: str) -> list[OwnershipRule]:
+        return (
+            self.db.query(OwnershipRule)
+            .filter(OwnershipRule.team_id == team_id)
+            .order_by(OwnershipRule.priority.desc())
+            .all()
+        )

@@ -69,11 +69,13 @@ class Scan(Base):
     base_image_chain = Column(JSON, nullable=True)    # e.g. ["scratch", "debian:bullseye-slim", "python:3.11-slim"]
     packages = Column(JSON, nullable=True)            # stored for dependency re-runs
     registry_id = Column(String, ForeignKey("registries.id"), nullable=True)  # set for registry-sourced scans
+    team_id = Column(String, ForeignKey("teams.id"), nullable=True)  # owning team (auto-assigned via ownership rules)
 
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
     sbom = relationship("SBOM", back_populates="scan", uselist=False, cascade="all, delete-orphan")
     policy_results = relationship("PolicyResult", back_populates="scan", cascade="all, delete-orphan")
     registry = relationship("Registry", back_populates="scans")
+    team = relationship("Team", back_populates="scans")
 
 
 class Finding(Base):
@@ -161,6 +163,37 @@ class AuditLog(Base):
     resource_id = Column(String, nullable=True)
     details = Column(JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    ownership_rules = relationship("OwnershipRule", back_populates="team", cascade="all, delete-orphan")
+    scans = relationship("Scan", back_populates="team")
+
+
+class OwnershipRule(Base):
+    __tablename__ = "ownership_rules"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    team_id = Column(String, ForeignKey("teams.id"), nullable=False)
+    # Glob pattern matched against scan target (e.g. "myregistry.io/frontend-*")
+    pattern = Column(String, nullable=False)
+    # Optional: restrict to a scan type (container/source/dependency); null = match all
+    scan_type = Column(String, nullable=True)
+    # Higher priority wins when multiple rules match (default 0)
+    priority = Column(Integer, default=0, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    team = relationship("Team", back_populates="ownership_rules")
 
 
 class AppSetting(Base):

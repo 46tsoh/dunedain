@@ -1,11 +1,12 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, ScanLine, ShieldCheck, FileText, Shield, Settings, Hexagon, Container, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, ScanLine, ShieldCheck, FileText, Shield, Settings, Hexagon, Container, FlaskConical, Users } from 'lucide-react';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/scans', icon: ScanLine, label: 'Scans' },
   { to: '/registries', icon: Container, label: 'Registries' },
   { to: '/workers', icon: Hexagon, label: 'Workers' },
+  { to: '/teams', icon: Users, label: 'Teams' },
   { to: '/policies', icon: ShieldCheck, label: 'Policies' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },
   { to: '/settings', icon: Settings, label: 'Settings' },

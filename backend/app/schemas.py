@@ -153,6 +153,7 @@ class ScanCreate(BaseModel):
     packages: Optional[list[dict[str, Any]]] = None
     registry_id: Optional[str] = None
     scanner_override: Optional[str] = None  # e.g. "trivy", "grype", "osv_scanner"
+    team_id: Optional[str] = None  # explicit team assignment (overrides ownership rules)
 
 
 class ScanRead(BaseModel):
@@ -171,6 +172,8 @@ class ScanRead(BaseModel):
     base_image_chain: Optional[list[str]] = None
     registry_id: Optional[str] = None
     registry_name: Optional[str] = None
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
     findings: list[FindingRead] = Field(default_factory=list)
     finding_count: int = 0
     findings_count: int = 0
@@ -206,6 +209,8 @@ class ScanSummary(BaseModel):
     base_image_chain: Optional[list[str]] = None
     registry_id: Optional[str] = None
     registry_name: Optional[str] = None
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
     finding_count: int = 0
     critical_count: int = 0
     high_count: int = 0
@@ -342,3 +347,86 @@ class RegistryTestResult(BaseModel):
     success: bool
     message: str
     repositories: Optional[list[str]] = None
+
+
+# ---------------------------------------------------------------------------
+# Team / Ownership
+# ---------------------------------------------------------------------------
+
+class OwnershipRuleBase(BaseModel):
+    pattern: str
+    scan_type: Optional[str] = None
+    priority: int = 0
+    description: Optional[str] = None
+
+
+class OwnershipRuleCreate(OwnershipRuleBase):
+    pass
+
+
+class OwnershipRuleRead(OwnershipRuleBase):
+    id: str
+    team_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TeamBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    contact_email: Optional[str] = None
+
+
+class TeamCreate(TeamBase):
+    pass
+
+
+class TeamUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    contact_email: Optional[str] = None
+
+
+class TeamRead(TeamBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    ownership_rules: list[OwnershipRuleRead] = Field(default_factory=list)
+    scan_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Team Dashboard
+# ---------------------------------------------------------------------------
+
+class TeamFindingSummary(BaseModel):
+    """A single finding with SLA context for the team dashboard."""
+    finding_id: str
+    vulnerability_id: str
+    package_name: str
+    package_version: str
+    severity: str
+    cvss_score: Optional[float] = None
+    risk_score: float = 0.0
+    is_fixed: bool = False
+    fix_version: Optional[str] = None
+    discovered_at: datetime
+    scan_id: str
+    scan_name: str
+    sla_hours: Optional[int] = None
+    hours_elapsed: float = 0.0
+    sla_violated: bool = False
+
+
+class TeamDashboardReport(BaseModel):
+    team: TeamRead
+    total_findings: int = 0
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    sla_violations: int = 0
+    findings: list[TeamFindingSummary] = Field(default_factory=list)
