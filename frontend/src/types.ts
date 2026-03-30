@@ -187,8 +187,10 @@ interface TeamFindingSummary {
   is_fixed: boolean;
   fix_version: string | null;
   discovered_at: string;
+  first_seen_at: string | null;
   scan_id: string;
   scan_name: string;
+  target: string | null;
   sla_hours: number | null;
   hours_elapsed: number;
   sla_violated: boolean;

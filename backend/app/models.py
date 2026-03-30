@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -29,12 +30,12 @@ class Registry(Base):
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     type = Column(
-        Enum("acr", "docker_hub", "ghcr", "generic", name="registry_type_enum"),
+        Enum("acr", "docker_hub", "ghcr", "generic", name="registry_type_enum", create_type=False),
         nullable=False,
         default="acr",
     )
     auth_method = Column(
-        Enum("managed_identity", "username_password", "none", name="registry_auth_enum"),
+        Enum("managed_identity", "username_password", "none", name="registry_auth_enum", create_type=False),
         nullable=False,
         default="managed_identity",
     )
@@ -53,10 +54,10 @@ class Scan(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     name = Column(String, nullable=False)
-    scan_type = Column(Enum("container", "dependency", "source", name="scan_type_enum"), nullable=False)
+    scan_type = Column(Enum("container", "dependency", "source", name="scan_type_enum", create_type=False), nullable=False)
     target = Column(String, nullable=False)
     status = Column(
-        Enum("pending", "running", "completed", "failed", "unsupported", name="scan_status_enum"),
+        Enum("pending", "running", "completed", "failed", "unsupported", name="scan_status_enum", create_type=False),
         nullable=False,
         default="pending",
     )
@@ -90,7 +91,7 @@ class Finding(Base):
 
     vulnerability_id = Column(String, nullable=False)
     severity = Column(
-        Enum("CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN", name="severity_enum"),
+        Enum("CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN", name="severity_enum", create_type=False),
         nullable=False,
         default="UNKNOWN",
     )
@@ -116,7 +117,7 @@ class Policy(Base):
     enabled = Column(Boolean, default=True, nullable=False)
     rules = Column(JSON, default=list)
     action = Column(
-        Enum("block", "warn", "audit", name="policy_action_enum"),
+        Enum("block", "warn", "audit", name="policy_action_enum", create_type=False),
         nullable=False,
         default="warn",
     )
@@ -145,7 +146,7 @@ class SBOM(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     scan_id = Column(String, ForeignKey("scans.id"), nullable=False)
-    format = Column(Enum("cyclonedx", "spdx", name="sbom_format_enum"), nullable=False, default="cyclonedx")
+    format = Column(Enum("cyclonedx", "spdx", name="sbom_format_enum", create_type=False), nullable=False, default="cyclonedx")
     spec_version = Column(String, nullable=False)
     content = Column(JSON, nullable=False)
     components_count = Column(Integer, default=0, nullable=False)
@@ -194,6 +195,48 @@ class OwnershipRule(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     team = relationship("Team", back_populates="ownership_rules")
+
+
+class VulnerabilityInstance(Base):
+    """Tracks unique vulnerability instances across scans.
+
+    Keyed on (vulnerability_id, package_name, target).  Upserted after each
+    scan completes — inserted on first occurrence, updated on subsequent scans.
+    Used for deduplication in dashboard/report queries and first-seen tracking.
+    """
+    __tablename__ = "vulnerability_instances"
+    __table_args__ = (
+        UniqueConstraint("vulnerability_id", "package_name", "target", name="uq_vuln_pkg_target"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    vulnerability_id = Column(String, nullable=False, index=True)
+    package_name = Column(String, nullable=False)
+    target = Column(String, nullable=False)
+
+    # Latest state (updated each time the same vuln is seen again)
+    severity = Column(
+        Enum("CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN", name="severity_enum", create_type=False),
+        nullable=False,
+        default="UNKNOWN",
+    )
+    cvss_score = Column(Float, nullable=True)
+    package_version = Column(String, nullable=False)  # latest observed version
+    package_ecosystem = Column(String, nullable=False)
+    is_fixed = Column(Boolean, default=False, nullable=False)
+    fix_version = Column(String, nullable=True)
+    risk_score = Column(Float, default=0.0, nullable=False)
+
+    # Tracking timestamps
+    first_seen_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+
+    # Link to the scan where this vuln was first and last observed
+    first_scan_id = Column(String, ForeignKey("scans.id", ondelete="SET NULL"), nullable=True)
+    last_scan_id = Column(String, ForeignKey("scans.id", ondelete="SET NULL"), nullable=True)
+
+    # Optional team linkage (derived from the scan's team)
+    team_id = Column(String, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
 
 
 class AppSetting(Base):

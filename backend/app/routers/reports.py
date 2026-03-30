@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..repositories import AuditLogRepository, FindingRepository, ScanRepository
+from ..repositories import AuditLogRepository, ScanRepository, VulnerabilityInstanceRepository
 from ..schemas import (
     AuditLogRead,
     DashboardReport,
@@ -23,37 +23,55 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 @router.get("/dashboard", response_model=DashboardReport)
 def dashboard(db: Session = Depends(get_db)):
     scan_repo = ScanRepository(db)
-    finding_repo = FindingRepository(db)
+    vuln_repo = VulnerabilityInstanceRepository(db)
 
     total_scans = scan_repo.count()
-    total_findings = finding_repo.count()
 
-    from ..models import Finding
-    critical_count = finding_repo.count(filters=[Finding.severity == "CRITICAL"])
-    high_count = finding_repo.count(filters=[Finding.severity == "HIGH"])
-    medium_count = finding_repo.count(filters=[Finding.severity == "MEDIUM"])
-    low_count = finding_repo.count(filters=[Finding.severity == "LOW"])
-    negligible_count = finding_repo.count(filters=[Finding.severity == "NEGLIGIBLE"])
-    unknown_count = finding_repo.count(filters=[Finding.severity == "UNKNOWN"])
+    # ── Deduped counts from VulnerabilityInstance table ────────────────
+    total_findings = vuln_repo.total_count()
+    sev_counts = vuln_repo.severity_counts()
+    critical_count = sev_counts.get("CRITICAL", 0)
+    high_count = sev_counts.get("HIGH", 0)
+    medium_count = sev_counts.get("MEDIUM", 0)
+    low_count = sev_counts.get("LOW", 0)
+    negligible_count = sev_counts.get("NEGLIGIBLE", 0)
+    unknown_count = sev_counts.get("UNKNOWN", 0)
 
     # Recent scans (last 10)
     from ..models import Scan
     recent = scan_repo.list(limit=10, order_by=Scan.created_at.desc())
-    recent_scans = [
-        ScanSummary(
+    recent_scans = []
+    for s in recent:
+        findings = s.findings
+        registry_name = s.registry.name if s.registry else None
+        team_name = s.team.name if s.team else None
+        recent_scans.append(ScanSummary(
             id=s.id,
             name=s.name,
             scan_type=s.scan_type,
             target=s.target,
             status=s.status,
+            error_message=s.error_message,
             created_at=s.created_at,
             completed_at=s.completed_at,
-            finding_count=len(s.findings),
-        )
-        for s in recent
-    ]
+            scanner_engine=s.scanner_engine,
+            scanner_override=s.scanner_override,
+            base_image=s.base_image,
+            base_image_chain=s.base_image_chain,
+            registry_id=s.registry_id,
+            registry_name=registry_name,
+            team_id=s.team_id,
+            team_name=team_name,
+            finding_count=len(findings),
+            critical_count=sum(1 for f in findings if f.severity == "CRITICAL"),
+            high_count=sum(1 for f in findings if f.severity == "HIGH"),
+            medium_count=sum(1 for f in findings if f.severity == "MEDIUM"),
+            low_count=sum(1 for f in findings if f.severity == "LOW"),
+            negligible_count=sum(1 for f in findings if f.severity == "NEGLIGIBLE"),
+            unknown_count=sum(1 for f in findings if f.severity == "UNKNOWN"),
+        ))
 
-    # Top vulnerabilities
+    # Top vulnerabilities (deduped — counts how many targets are affected)
     top_vulnerabilities = [
         TopVulnerability(
             vulnerability_id=row.vulnerability_id,
@@ -61,22 +79,20 @@ def dashboard(db: Session = Depends(get_db)):
             severity=row.severity,
             max_cvss=row.max_cvss,
         )
-        for row in finding_repo.top_vulnerabilities(limit=10)
+        for row in vuln_repo.top_vulnerabilities(limit=10)
     ]
 
-    # Severity trend: last 30 days
-    trend_findings = finding_repo.trend_since(days=30)
+    # Severity trend: last 30 days (based on first_seen_at of unique vulns)
+    trend_instances = vuln_repo.trend_since(days=30)
 
     day_buckets: dict[str, dict[str, int]] = defaultdict(
         lambda: {"critical": 0, "high": 0, "medium": 0, "low": 0, "negligible": 0, "unknown": 0}
     )
-    for f in trend_findings:
-        scan = scan_repo.get(f.scan_id)
-        if scan and scan.created_at:
-            day_key = scan.created_at.strftime("%Y-%m-%d")
-            sev = f.severity.lower()
-            if sev in day_buckets[day_key]:
-                day_buckets[day_key][sev] += 1
+    for vi in trend_instances:
+        day_key = vi.first_seen_at.strftime("%Y-%m-%d")
+        sev = vi.severity.lower()
+        if sev in day_buckets[day_key]:
+            day_buckets[day_key][sev] += 1
 
     severity_trend = [
         SeverityTrendPoint(

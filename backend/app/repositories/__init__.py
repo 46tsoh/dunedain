@@ -10,6 +10,7 @@ from .repos import (
     ScanRepository,
     SettingRepository,
     TeamRepository,
+    VulnerabilityInstanceRepository,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "ScanRepository",
     "SettingRepository",
     "TeamRepository",
+    "VulnerabilityInstanceRepository",
 ]

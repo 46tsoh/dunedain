@@ -403,7 +403,7 @@ class TeamRead(TeamBase):
 # ---------------------------------------------------------------------------
 
 class TeamFindingSummary(BaseModel):
-    """A single finding with SLA context for the team dashboard."""
+    """A unique vulnerability instance with SLA context for the team dashboard."""
     finding_id: str
     vulnerability_id: str
     package_name: str
@@ -413,9 +413,11 @@ class TeamFindingSummary(BaseModel):
     risk_score: float = 0.0
     is_fixed: bool = False
     fix_version: Optional[str] = None
-    discovered_at: datetime
-    scan_id: str
-    scan_name: str
+    discovered_at: datetime       # first_seen_at of the vulnerability instance
+    first_seen_at: Optional[datetime] = None  # explicit alias for frontend
+    scan_id: str                  # first scan that found this vuln
+    scan_name: str                # target name for display
+    target: Optional[str] = None  # scan target (e.g. image name)
     sla_hours: Optional[int] = None
     hours_elapsed: float = 0.0
     sla_violated: bool = False

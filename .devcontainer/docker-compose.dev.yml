@@ -1,0 +1,50 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace:cached
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dunedain-dev-cache:/data/cache
+    environment:
+      - DATABASE_URL=postgresql://dunedain:dunedain@postgres:5432/dunedain
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DUNEDAIN_CACHE_DIR=/data/cache
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:1337
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    network_mode: service:postgres  # share network so localhost:5432 works
+    user: dev
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=dunedain
+      - POSTGRES_PASSWORD=dunedain
+      - POSTGRES_DB=dunedain
+    volumes:
+      - dunedain-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dunedain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dunedain-dev-pgdata:
+  dunedain-dev-cache:

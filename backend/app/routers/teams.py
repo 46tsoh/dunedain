@@ -12,11 +12,11 @@ from ..database import get_db
 from ..models import AuditLog, OwnershipRule, Team
 from ..repositories import (
     AuditLogRepository,
-    FindingRepository,
     OwnershipRuleRepository,
     ScanRepository,
     SettingRepository,
     TeamRepository,
+    VulnerabilityInstanceRepository,
 )
 from ..schemas import (
     OwnershipRuleCreate,
@@ -237,20 +237,21 @@ def team_dashboard(
 ):
     """Per-team vulnerability dashboard with SLA tracking.
 
-    Returns all findings across all scans owned by the team, enriched with
-    SLA deadline info and violation flags.
+    Returns deduplicated vulnerability instances owned by the team, enriched
+    with SLA deadline info and violation flags.  Each row represents a unique
+    (vulnerability_id, package_name, target) tuple — not a per-scan finding.
     """
     team_repo = TeamRepository(db)
     team = team_repo.get_or_404(team_id, detail="Team not found")
     team_read = _team_to_read(team)
 
-    # Gather all scans for this team
-    scans = team_repo.scans_for_team(team_id)
-    if not scans:
+    vuln_repo = VulnerabilityInstanceRepository(db)
+    instances = vuln_repo.for_team(team_id)
+
+    if not instances:
         return TeamDashboardReport(team=team_read)
 
     now = datetime.utcnow()
-    finding_repo = FindingRepository(db)
 
     findings_out: list[TeamFindingSummary] = []
     total = 0
@@ -260,62 +261,63 @@ def team_dashboard(
     low = 0
     violations = 0
 
-    for scan in scans:
-        # Only look at completed scans
-        if scan.status != "completed":
+    for vi in instances:
+        # Apply severity filter
+        if severity and vi.severity.upper() != severity.upper():
+            continue
+        # Apply is_fixed filter
+        if is_fixed is not None and vi.is_fixed != is_fixed:
             continue
 
-        scan_findings = finding_repo.for_scan(
-            scan.id,
-            severity=severity,
-            is_fixed=is_fixed,
-        )
+        discovered_at = vi.first_seen_at
+        sla_hours = _resolve_sla_hours(vi.severity, vi.cvss_score, db)
+        hours_elapsed = (now - discovered_at).total_seconds() / 3600.0
+        sla_violated = False
+        if sla_hours is not None:
+            sla_violated = hours_elapsed > sla_hours
 
-        for f in scan_findings:
-            discovered_at = scan.created_at
-            sla_hours = _resolve_sla_hours(f.severity, f.cvss_score, db)
-            hours_elapsed = (now - discovered_at).total_seconds() / 3600.0
-            sla_violated = False
-            if sla_hours is not None:
-                sla_violated = hours_elapsed > sla_hours
+        # Apply sla_status filter
+        if sla_status == "violated" and not sla_violated:
+            continue
+        if sla_status == "ok" and sla_violated:
+            continue
 
-            # Apply sla_status filter
-            if sla_status == "violated" and not sla_violated:
-                continue
-            if sla_status == "ok" and sla_violated:
-                continue
+        total += 1
+        sev = vi.severity.upper()
+        if sev == "CRITICAL":
+            critical += 1
+        elif sev == "HIGH":
+            high += 1
+        elif sev == "MEDIUM":
+            medium += 1
+        elif sev == "LOW":
+            low += 1
 
-            total += 1
-            sev = f.severity.upper()
-            if sev == "CRITICAL":
-                critical += 1
-            elif sev == "HIGH":
-                high += 1
-            elif sev == "MEDIUM":
-                medium += 1
-            elif sev == "LOW":
-                low += 1
+        if sla_violated:
+            violations += 1
 
-            if sla_violated:
-                violations += 1
+        # Use first_scan_id for navigation link; derive scan_name from target
+        scan_name = vi.target
 
-            findings_out.append(TeamFindingSummary(
-                finding_id=f.id,
-                vulnerability_id=f.vulnerability_id,
-                package_name=f.package_name,
-                package_version=f.package_version,
-                severity=f.severity,
-                cvss_score=f.cvss_score,
-                risk_score=f.risk_score,
-                is_fixed=f.is_fixed,
-                fix_version=f.fix_version,
-                discovered_at=discovered_at,
-                scan_id=scan.id,
-                scan_name=scan.name,
-                sla_hours=sla_hours,
-                hours_elapsed=round(hours_elapsed, 1),
-                sla_violated=sla_violated,
-            ))
+        findings_out.append(TeamFindingSummary(
+            finding_id=vi.id,
+            vulnerability_id=vi.vulnerability_id,
+            package_name=vi.package_name,
+            package_version=vi.package_version,
+            severity=vi.severity,
+            cvss_score=vi.cvss_score,
+            risk_score=vi.risk_score,
+            is_fixed=vi.is_fixed,
+            fix_version=vi.fix_version,
+            discovered_at=discovered_at,
+            first_seen_at=discovered_at,
+            scan_id=vi.first_scan_id or "",
+            scan_name=scan_name,
+            target=vi.target,
+            sla_hours=sla_hours,
+            hours_elapsed=round(hours_elapsed, 1),
+            sla_violated=sla_violated,
+        ))
 
     return TeamDashboardReport(
         team=team_read,

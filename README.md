@@ -29,21 +29,50 @@ docker compose up -d
 - **API**: http://localhost:1337
 - **API Docs**: http://localhost:1337/docs
 
-### Local Development
+### Local Development (devcontainer — recommended)
 
-**Backend:**
+The repo ships with a devcontainer that gives every developer an identical environment: Python 3.12, Node 20, Trivy, Grype, Syft, osv-scanner, Docker CLI, Postgres, and Redis — all pre-configured, nothing installed on your host machine.
+
+**Option A — VS Code / Cursor**
+
+1. Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+2. Open the repo, then **Reopen in Container** when prompted
+3. The container builds, migrations run, and dependencies install automatically
+
+**Option B — CLI only** (no IDE required)
+
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 1337
+# Install the devcontainer CLI once
+npm install -g @devcontainers/cli
+
+# Start the environment
+devcontainer up --workspace-folder .
+
+# Open a shell inside it
+devcontainer exec --workspace-folder . bash
 ```
 
-**Frontend:**
+**Option C — plain Docker Compose**
+
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose -f .devcontainer/docker-compose.dev.yml up -d
+docker compose -f .devcontainer/docker-compose.dev.yml exec devcontainer bash
 ```
+
+**Once inside the container**, start the services:
+
+```bash
+# Terminal 1 — backend with hot reload
+cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 1337
+
+# Terminal 2 — celery worker
+cd backend && celery -A app.celery_app worker --loglevel=info -Q scans
+
+# Terminal 3 — frontend dev server (opens at http://localhost:5173)
+cd frontend && npm run dev
+```
+
+> **Note:** `docker compose up` (the production stack) still works from inside the devcontainer — the Docker socket is mounted so the CLI talks to your host daemon.
 
 ## CI/CD Integration
 
@@ -115,20 +144,22 @@ Policies consist of one or more rules:
 ```
 ┌──────────────┐    ┌──────────────────┐    ┌─────────────┐
 │   Frontend   │───▶│  FastAPI Backend │───▶│  osv.dev API│
-│  React + TS  │    │  SQLite / SQLAlc │    │  (public)   │
+│  React + TS  │    │  Python 3.12     │    │  (public)   │
 └──────────────┘    └──────────────────┘    └─────────────┘
                            │
-                    ┌──────┴──────┐
-                    │  File Cache │
-                    │  (/data/    │
-                    │   cache/)   │
-                    └─────────────┘
+               ┌───────────┼───────────┐
+               ▼           ▼           ▼
+        ┌────────────┐ ┌───────┐ ┌──────────┐
+        │ PostgreSQL │ │ Redis │ │  Celery  │
+        │  (schema)  │ │(queue)│ │ Workers  │
+        └────────────┘ └───────┘ └──────────┘
 ```
 
 ## Tech Stack
 
-- **Backend**: Python 3.12, FastAPI, SQLAlchemy, SQLite
-- **Frontend**: React 18, TypeScript, Vite, React Query, Recharts
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy, PostgreSQL, Celery
+- **Frontend**: React 19, TypeScript, Vite, React Query, Recharts
+- **Scanners**: Trivy, Grype, Syft, osv-scanner
 - **Vulnerability Data**: [osv.dev](https://osv.dev) open vulnerability database
 - **SBOM Format**: CycloneDX 1.4
 - **Deployment**: Docker, Docker Compose

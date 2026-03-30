@@ -18,6 +18,7 @@ from ..repositories import (
     RegistryRepository,
     SBOMRepository,
     ScanRepository,
+    VulnerabilityInstanceRepository,
 )
 from ..services import scanner as scanner_svc
 from ..services import sbom as sbom_svc
@@ -161,6 +162,27 @@ def run_scan(self, scan_id: str, packages: list[dict] | None = None) -> None:
 
         finding_repo.flush()
         db_findings = prioritize_findings(db_findings)
+
+        # ── Upsert vulnerability instances (first-seen tracking) ──────────
+        vuln_repo = VulnerabilityInstanceRepository(db)
+        scan_created_at = scan.created_at
+        for f in db_findings:
+            vuln_repo.upsert(
+                vulnerability_id=f.vulnerability_id,
+                package_name=f.package_name,
+                target=scan.target,
+                severity=f.severity,
+                cvss_score=f.cvss_score,
+                package_version=f.package_version,
+                package_ecosystem=f.package_ecosystem,
+                is_fixed=f.is_fixed,
+                fix_version=f.fix_version,
+                risk_score=f.risk_score,
+                scan_id=scan.id,
+                scan_created_at=scan_created_at,
+                team_id=scan.team_id,
+            )
+        vuln_repo.flush()
 
         # ── Policy evaluation ─────────────────────────────────────────────
         policies = policy_repo.list_enabled()

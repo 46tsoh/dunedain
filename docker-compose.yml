@@ -1,6 +1,19 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=dunedain
+      - POSTGRES_PASSWORD=dunedain
+      - POSTGRES_DB=dunedain
+    volumes:
+      - dunedain-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dunedain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -15,15 +28,17 @@ services:
     ports:
       - "8001:1337"
     environment:
-      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DATABASE_URL=postgresql://dunedain:dunedain@postgres:5432/dunedain
       - DUNEDAIN_CACHE_DIR=/data/cache
       - ALLOWED_ORIGINS=http://localhost,http://localhost:3000,http://frontend
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - dunedain-data:/data
+      - dunedain-cache:/data/cache
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -36,14 +51,16 @@ services:
     build: ./backend
     command: celery -A app.celery_app worker --loglevel=info --concurrency=8 -Q scans
     environment:
-      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DATABASE_URL=postgresql://dunedain:dunedain@postgres:5432/dunedain
       - DUNEDAIN_CACHE_DIR=/data/cache
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - dunedain-data:/data
+      - dunedain-cache:/data/cache
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
@@ -51,15 +68,17 @@ services:
 
   beat:
     build: ./backend
-    command: celery -A app.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule /data/celerybeat-schedule
+    command: celery -A app.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule /tmp/celerybeat-schedule
     environment:
-      - DATABASE_URL=sqlite:////data/dunedain.db
+      - DATABASE_URL=postgresql://dunedain:dunedain@postgres:5432/dunedain
       - DUNEDAIN_CACHE_DIR=/data/cache
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - dunedain-data:/data
+      - dunedain-cache:/data/cache
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -72,4 +91,5 @@ services:
       - backend
 
 volumes:
-  dunedain-data:
+  dunedain-pgdata:
+  dunedain-cache:

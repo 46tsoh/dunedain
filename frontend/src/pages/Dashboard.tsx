@@ -40,10 +40,10 @@ export default function Dashboard() {
   ];
 
   const statCards = [
-    { label: 'Total Scans',    value: data.total_scans,    icon: ScanLine,     color: 'var(--accent)' },
-    { label: 'Total Findings', value: data.total_findings, icon: Activity,     color: 'var(--text-secondary)' },
-    { label: 'Critical',       value: data.critical_count, icon: AlertTriangle, color: 'var(--critical)' },
-    { label: 'High',           value: data.high_count,     icon: Shield,       color: 'var(--high)' },
+    { label: 'Total Scans',          value: data.total_scans,    icon: ScanLine,     color: 'var(--accent)' },
+    { label: 'Unique Vulnerabilities', value: data.total_findings, icon: Activity,     color: 'var(--text-secondary)' },
+    { label: 'Critical',             value: data.critical_count, icon: AlertTriangle, color: 'var(--critical)' },
+    { label: 'High',                 value: data.high_count,     icon: Shield,       color: 'var(--high)' },
   ];
 
   return (
@@ -110,7 +110,7 @@ export default function Dashboard() {
                       padding: '1px 8px',
                       fontSize: 11,
                       color: 'var(--text-secondary)',
-                    }}>{v.count}</span>
+                    }}>{v.count} {v.count === 1 ? 'target' : 'targets'}</span>
                   </div>
                 </div>
               ))}

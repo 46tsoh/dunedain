@@ -146,7 +146,7 @@ export default function TeamDashboard() {
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 }}>
         {[
-          { label: 'Total Findings', value: data.total_findings, icon: Activity, color: 'var(--text-secondary)' },
+          { label: 'Unique Vulnerabilities', value: data.total_findings, icon: Activity, color: 'var(--text-secondary)' },
           { label: 'Critical', value: data.critical_count, icon: AlertTriangle, color: 'var(--critical)' },
           { label: 'High', value: data.high_count, icon: Shield, color: 'var(--high)' },
           { label: 'SLA Violations', value: data.sla_violations, icon: XCircle, color: 'var(--error)' },
@@ -269,7 +269,7 @@ export default function TeamDashboard() {
       {/* Findings Table */}
       <div style={card}>
         <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-          Findings ({filteredFindings.length})
+          Unique Vulnerabilities ({filteredFindings.length})
           {data.sla_violations > 0 && (
             <span style={{ color: 'var(--error)', fontSize: 13, fontWeight: 400, marginLeft: 8 }}>
               {data.sla_violations} SLA violation{data.sla_violations !== 1 ? 's' : ''}
@@ -289,9 +289,9 @@ export default function TeamDashboard() {
                   </th>
                   <th style={{ textAlign: 'left', padding: '8px 6px' }}>Vulnerability</th>
                   <th style={{ textAlign: 'left', padding: '8px 6px' }}>Package</th>
-                  <th style={{ textAlign: 'left', padding: '8px 6px' }}>Scan</th>
+                  <th style={{ textAlign: 'left', padding: '8px 6px' }}>Target</th>
                   <th style={{ textAlign: 'left', padding: '8px 6px', cursor: 'pointer' }} onClick={() => toggleSort('discovered_at')}>
-                    Discovered {sortField === 'discovered_at' ? (sortDir === 'desc' ? '\u25BC' : '\u25B2') : ''}
+                    First Seen {sortField === 'discovered_at' ? (sortDir === 'desc' ? '\u25BC' : '\u25B2') : ''}
                   </th>
                   <th style={{ textAlign: 'left', padding: '8px 6px', cursor: 'pointer' }} onClick={() => toggleSort('risk_score')}>
                     Risk {sortField === 'risk_score' ? (sortDir === 'desc' ? '\u25BC' : '\u25B2') : ''}
@@ -320,7 +320,7 @@ export default function TeamDashboard() {
                     </td>
                     <td style={{ padding: '8px 6px' }}>
                       <Link to={`/scans/${f.scan_id}`} style={{ color: 'var(--accent)', fontSize: 12 }}>
-                        {f.scan_name.length > 30 ? f.scan_name.slice(0, 30) + '...' : f.scan_name}
+                        {(f.target || f.scan_name).length > 35 ? (f.target || f.scan_name).slice(0, 35) + '...' : (f.target || f.scan_name)}
                       </Link>
                     </td>
                     <td style={{ padding: '8px 6px', color: 'var(--text-secondary)' }}>

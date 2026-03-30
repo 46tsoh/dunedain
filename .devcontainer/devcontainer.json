@@ -1,0 +1,67 @@
+{
+  "name": "Dunedain",
+  "dockerComposeFile": "docker-compose.dev.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+
+  "forwardPorts": [
+    1337,   // backend (uvicorn)
+    5173,   // frontend (vite dev)
+    5432,   // postgres
+    6379    // redis
+  ],
+  "portsAttributes": {
+    "1337": { "label": "Backend API", "onAutoForward": "notify" },
+    "5173": { "label": "Frontend Dev", "onAutoForward": "openBrowser" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" },
+    "6379": { "label": "Redis", "onAutoForward": "silent" }
+  },
+
+  "onCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "[typescript]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "sqltools.connections": [
+          {
+            "name": "Dunedain (dev)",
+            "driver": "PostgreSQL",
+            "host": "localhost",
+            "port": 5432,
+            "database": "dunedain",
+            "username": "dunedain",
+            "password": "dunedain"
+          }
+        ]
+      }
+    }
+  },
+
+  "remoteUser": "dev"
+}
