@@ -104,6 +104,8 @@ class Finding(Base):
     risk_accepted = Column(Boolean, default=False, nullable=False)
     risk_accepted_at = Column(DateTime, nullable=True)
     risk_score = Column(Float, default=0.0, nullable=False)
+    epss_score = Column(Float, nullable=True)
+    epss_percentile = Column(Float, nullable=True)
     aliases = Column(JSON, default=list)
     references = Column(JSON, default=list)
 
