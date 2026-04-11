@@ -23,6 +23,8 @@ class FindingBase(BaseModel):
     reachable: bool = False
     exploitable: bool = False
     risk_score: float = 0.0
+    epss_score: Optional[float] = None
+    epss_percentile: Optional[float] = None
     aliases: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
 

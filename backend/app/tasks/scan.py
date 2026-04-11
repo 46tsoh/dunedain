@@ -24,7 +24,8 @@ from ..services import scanner as scanner_svc
 from ..services import sbom as sbom_svc
 from ..services.scanner import WindowsImageUnsupportedError
 from ..services.policy import evaluate_policy
-from ..services.risk import prioritize_findings
+from ..services.risk import compute_risk_score, prioritize_findings
+from ..services.epss import fetch_epss_scores
 
 
 @celery_app.task(
@@ -161,6 +162,22 @@ def run_scan(self, scan_id: str, packages: list[dict] | None = None) -> None:
             db_findings.append(finding)
 
         finding_repo.flush()
+
+        # ── EPSS enrichment ───────────────────────────────────────────────
+        # Batch-fetch EPSS scores from FIRST.org and update findings +
+        # recalculate risk scores with the new exploitation probability.
+        cve_ids = [f.vulnerability_id for f in db_findings]
+        epss_map = fetch_epss_scores(cve_ids)
+        if epss_map:
+            for f in db_findings:
+                epss = epss_map.get(f.vulnerability_id)
+                if epss:
+                    f.epss_score = epss.score
+                    f.epss_percentile = epss.percentile
+                    f.risk_score = compute_risk_score(
+                        f.cvss_score, f.severity, f.exploitable, f.reachable, epss.score
+                    )
+
         db_findings = prioritize_findings(db_findings)
 
         # ── Upsert vulnerability instances (first-seen tracking) ──────────
