@@ -202,7 +202,7 @@ export default function FindingCard({ finding }: Props) {
         style={{
           width: '100%',
           display: 'grid',
-          gridTemplateColumns: '1fr auto auto auto auto auto',
+          gridTemplateColumns: '1fr auto auto auto auto auto auto',
           alignItems: 'center',
           gap: 12,
           padding: '10px 14px',
@@ -229,6 +229,27 @@ export default function FindingCard({ finding }: Props) {
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
           CVSS: {finding.cvss_score?.toFixed(1) ?? 'N/A'}
         </span>
+        {finding.epss_score != null && (
+          <span style={{
+            fontSize: 11,
+            fontFamily: 'monospace',
+            padding: '2px 6px',
+            borderRadius: 4,
+            background: finding.epss_score >= 0.5
+              ? 'rgba(239,68,68,0.15)'
+              : finding.epss_score >= 0.1
+                ? 'rgba(245,158,11,0.15)'
+                : 'rgba(100,116,139,0.15)',
+            color: finding.epss_score >= 0.5
+              ? 'var(--critical)'
+              : finding.epss_score >= 0.1
+                ? 'var(--warning)'
+                : 'var(--text-secondary)',
+            whiteSpace: 'nowrap',
+          }}>
+            EPSS {(finding.epss_score * 100).toFixed(1)}%
+          </span>
+        )}
         <span style={{ color: finding.is_fixed ? 'var(--success)' : 'var(--text-secondary)', fontSize: 12 }}>
           {finding.is_fixed ? '✓ Fix available' : 'No fix'}
         </span>
@@ -258,9 +279,22 @@ export default function FindingCard({ finding }: Props) {
               <span style={{ color: 'var(--text-secondary)', fontSize: 11, textTransform: 'uppercase' }}>Ecosystem</span>
               <div style={{ fontSize: 13 }}>{finding.package_ecosystem}</div>
             </div>
+            {finding.epss_score != null && (
+              <div>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 11, textTransform: 'uppercase' }}>EPSS Score</span>
+                <div style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                  {(finding.epss_score * 100).toFixed(2)}%
+                  {finding.epss_percentile != null && (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 11, marginLeft: 6 }}>
+                      ({(finding.epss_percentile * 100).toFixed(0)}th percentile)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             {finding.exploitable && (
               <div>
-                <span style={{ fontSize: 11, color: 'var(--critical)' }}>⚠ EXPLOITABLE</span>
+                <span style={{ fontSize: 11, color: 'var(--critical)' }}>u26a0 EXPLOITABLE</span>
               </div>
             )}
           </div>

@@ -8,8 +8,16 @@ def compute_risk_score(
     severity: str,
     exploitable: bool,
     reachable: bool,
+    epss_score: float | None = None,
 ) -> float:
-    """Return a normalised 0-10 risk score."""
+    """Return a normalised 0-10 risk score.
+
+    Multipliers applied in order:
+    - exploitable flag: u00d71.5
+    - reachable flag:   u00d71.3
+    - EPSS u2265 0.1:       u00d71.4  (high real-world exploitation probability)
+    - EPSS u2265 0.5:       u00d71.6  (very high; replaces the 1.4 multiplier)
+    """
     _severity_base: dict[str, float] = {
         "CRITICAL": 9.0,
         "HIGH": 7.0,
@@ -24,6 +32,11 @@ def compute_risk_score(
         score *= 1.5
     if reachable:
         score *= 1.3
+    if epss_score is not None:
+        if epss_score >= 0.5:
+            score *= 1.6
+        elif epss_score >= 0.1:
+            score *= 1.4
 
     return round(min(score, 10.0), 2)
 

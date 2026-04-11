@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from app.services.risk import compute_risk_score, prioritize_findings
+from app.services.epss import fetch_epss_scores, EpssScore
 from app.services.scanner import (
     _trivy_results_to_findings,
     _grype_results_to_findings,
@@ -779,3 +780,130 @@ class TestActionRerunScanTargetResolution:
         )
         # Cannot apply fix_version to digest ref; falls back to original
         assert result == "myacr.azurecr.io/app@sha256:abc123def456"
+
+
+# ---------------------------------------------------------------------------
+# EPSS service tests
+# ---------------------------------------------------------------------------
+
+class TestFetchEpssScores:
+    """Tests for the FIRST.org EPSS enrichment service."""
+
+    def test_returns_scores_for_known_cves(self):
+        fake_response = {
+            "status": "OK",
+            "data": [
+                {"cve": "CVE-2021-44228", "epss": "0.97530", "percentile": "0.99990"},
+                {"cve": "CVE-2023-44487", "epss": "0.94385", "percentile": "0.99971"},
+            ],
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = fake_response
+        mock_resp.raise_for_status.return_value = None
+
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+            result = fetch_epss_scores(["CVE-2021-44228", "CVE-2023-44487"])
+
+        assert "CVE-2021-44228" in result
+        assert abs(result["CVE-2021-44228"].score - 0.97530) < 0.0001
+        assert abs(result["CVE-2021-44228"].percentile - 0.99990) < 0.0001
+        assert "CVE-2023-44487" in result
+
+    def test_filters_non_cve_identifiers(self):
+        """GHSA and other non-CVE IDs are silently skipped without an API call."""
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            result = fetch_epss_scores(["GHSA-xxxx-yyyy-zzzz", "RUSTSEC-2023-0001"])
+            MockClient.assert_not_called()
+        assert result == {}
+
+    def test_empty_input_returns_empty(self):
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            result = fetch_epss_scores([])
+            MockClient.assert_not_called()
+        assert result == {}
+
+    def test_api_failure_returns_empty(self):
+        """Network errors are swallowed and return an empty dict."""
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.side_effect = Exception("timeout")
+            result = fetch_epss_scores(["CVE-2021-44228"])
+        assert result == {}
+
+    def test_missing_cve_absent_from_result(self):
+        """CVEs not in the API response are simply absent from the result dict."""
+        fake_response = {"status": "OK", "data": []}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = fake_response
+        mock_resp.raise_for_status.return_value = None
+
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+            result = fetch_epss_scores(["CVE-2099-99999"])
+
+        assert result == {}
+
+    def test_mixed_cve_and_non_cve(self):
+        """Only CVE IDs are sent to the API; non-CVE IDs are dropped."""
+        fake_response = {
+            "status": "OK",
+            "data": [{"cve": "CVE-2021-44228", "epss": "0.97530", "percentile": "0.99990"}],
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = fake_response
+        mock_resp.raise_for_status.return_value = None
+
+        with patch("app.services.epss.httpx.Client") as MockClient:
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+            result = fetch_epss_scores(["CVE-2021-44228", "GHSA-xxxx-yyyy-zzzz"])
+
+        assert "CVE-2021-44228" in result
+        assert "GHSA-xxxx-yyyy-zzzz" not in result
+
+
+# ---------------------------------------------------------------------------
+# Risk score with EPSS tests
+# ---------------------------------------------------------------------------
+
+class TestRiskScoreWithEpss:
+    """Tests for EPSS multiplier in compute_risk_score."""
+
+    def test_no_epss_unchanged(self):
+        """Without EPSS, score is identical to the original formula."""
+        assert compute_risk_score(7.5, "HIGH", False, False) == \
+               compute_risk_score(7.5, "HIGH", False, False, None)
+
+    def test_low_epss_no_boost(self):
+        """EPSS < 0.1 does not change the score."""
+        score_without = compute_risk_score(5.0, "MEDIUM", False, False)
+        score_with = compute_risk_score(5.0, "MEDIUM", False, False, epss_score=0.05)
+        assert score_without == score_with
+
+    def test_medium_epss_boost(self):
+        """EPSS >= 0.1 applies a 1.4x multiplier."""
+        base = compute_risk_score(5.0, "MEDIUM", False, False)
+        boosted = compute_risk_score(5.0, "MEDIUM", False, False, epss_score=0.2)
+        assert boosted == round(min(base * 1.4, 10.0), 2)
+
+    def test_high_epss_boost(self):
+        """EPSS >= 0.5 applies a 1.6x multiplier."""
+        base = compute_risk_score(5.0, "MEDIUM", False, False)
+        boosted = compute_risk_score(5.0, "MEDIUM", False, False, epss_score=0.75)
+        assert boosted == round(min(base * 1.6, 10.0), 2)
+
+    def test_epss_capped_at_10(self):
+        """Score never exceeds 10.0 regardless of multipliers."""
+        score = compute_risk_score(9.8, "CRITICAL", True, True, epss_score=0.99)
+        assert score == 10.0
+
+    def test_epss_boundary_exactly_01(self):
+        """EPSS exactly 0.1 triggers the medium boost."""
+        base = compute_risk_score(5.0, "MEDIUM", False, False)
+        boosted = compute_risk_score(5.0, "MEDIUM", False, False, epss_score=0.1)
+        assert boosted == round(min(base * 1.4, 10.0), 2)
+
+    def test_epss_boundary_exactly_05(self):
+        """EPSS exactly 0.5 triggers the high boost."""
+        base = compute_risk_score(5.0, "MEDIUM", False, False)
+        boosted = compute_risk_score(5.0, "MEDIUM", False, False, epss_score=0.5)
+        assert boosted == round(min(base * 1.6, 10.0), 2)

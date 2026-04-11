@@ -40,6 +40,8 @@ interface Finding {
   reachable: boolean;
   exploitable: boolean;
   risk_score: number;
+  epss_score: number | null;
+  epss_percentile: number | null;
   aliases: string[];
   references: string[];
 }
