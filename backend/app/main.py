@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, SessionLocal, SQLALCHEMY_DATABASE_URL, engine
-from .models import Policy
-from .routers import policies, reports, registries, sbom, scans, settings, teams, vulns
+from .models import AutomationRule, Policy
+from .routers import policies, reports, registries, sbom, scans, settings, teams, vulns, integrations, webhooks, automation
 
 
 @asynccontextmanager
@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _run_alembic_upgrade()
     _seed_default_policies()
+    _seed_default_automation_rules()
     yield
 
 
@@ -98,6 +99,66 @@ def _seed_default_policies() -> None:
         db.close()
 
 
+def _seed_default_automation_rules() -> None:
+    """Seed default automation rules if the table is empty.
+
+    Disabled by default — users must explicitly enable them.
+    """
+    db = SessionLocal()
+    try:
+        if db.query(AutomationRule).count() > 0:
+            return
+
+        defaults = [
+            AutomationRule(
+                id=str(uuid4()),
+                name="Rescan on ticket closure",
+                description=(
+                    "When a Jira ticket is moved to Done/Closed/Resolved, "
+                    "automatically re-run the associated scan to verify the fix."
+                ),
+                enabled=False,
+                trigger="jira_status_changed",
+                conditions=[
+                    {"type": "ticket_status_in", "values": ["done", "closed", "resolved"]},
+                ],
+                actions=[
+                    {"type": "rerun_scan"},
+                ],
+                integration_id=None,
+                team_id=None,
+                execution_count=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ),
+            AutomationRule(
+                id=str(uuid4()),
+                name="Rescan on GitHub issue closure",
+                description=(
+                    "When a GitHub issue is closed, automatically re-run the "
+                    "associated scan to verify the fix."
+                ),
+                enabled=False,
+                trigger="ticket_status_changed",
+                conditions=[
+                    {"type": "ticket_status_in", "values": ["closed"]},
+                ],
+                actions=[
+                    {"type": "rerun_scan"},
+                ],
+                integration_id=None,
+                team_id=None,
+                execution_count=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ),
+        ]
+        db.add_all(defaults)
+        db.commit()
+    finally:
+        db.close()
+
+
 app = FastAPI(
     title="Dunedain",
     description="Open-source software supply chain security platform powered by OSV.dev",
@@ -128,6 +189,9 @@ app.include_router(vulns.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(registries.router, prefix="/api")
 app.include_router(teams.router, prefix="/api")
+app.include_router(integrations.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
+app.include_router(automation.router, prefix="/api")
 
 
 @app.get("/health", tags=["health"])

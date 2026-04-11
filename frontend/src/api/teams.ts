@@ -15,6 +15,9 @@ export const createTeam = async (payload: {
   name: string;
   description?: string;
   contact_email?: string;
+  integration_id?: string | null;
+  auto_create_tickets?: boolean;
+  ticket_severity_threshold?: string;
 }): Promise<Team> => {
   const { data } = await client.post('/api/teams', payload);
   return data;
@@ -24,6 +27,9 @@ export const updateTeam = async (id: string, payload: {
   name?: string;
   description?: string;
   contact_email?: string;
+  integration_id?: string | null;
+  auto_create_tickets?: boolean;
+  ticket_severity_threshold?: string;
 }): Promise<Team> => {
   const { data } = await client.put(`/api/teams/${id}`, payload);
   return data;

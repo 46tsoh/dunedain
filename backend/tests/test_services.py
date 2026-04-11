@@ -510,3 +510,272 @@ def test_grype_results_to_findings_ecosystem_mapping():
 def test_grype_results_to_findings_empty():
     assert _grype_results_to_findings({}) == []
     assert _grype_results_to_findings({"matches": []}) == []
+
+
+# ---------------------------------------------------------------------------
+# Automation engine — _resolve_newest_tag tests
+# ---------------------------------------------------------------------------
+
+from app.services.automation.engine import _resolve_newest_tag
+
+
+class TestResolveNewestTag:
+    """Tests for semver tag resolution used by rerun_scan automation action."""
+
+    def test_basic_semver(self):
+        assert _resolve_newest_tag(["1.0.0", "2.1.0", "1.5.3"]) == "2.1.0"
+
+    def test_v_prefix(self):
+        assert _resolve_newest_tag(["v1.0.0", "v2.1.0", "v1.5.3"]) == "v2.1.0"
+
+    def test_mixed_v_prefix(self):
+        """Tags with and without 'v' prefix are compared correctly."""
+        assert _resolve_newest_tag(["v1.0.0", "2.1.0", "v1.5.3"]) == "2.1.0"
+
+    def test_prerelease_lower_than_release(self):
+        result = _resolve_newest_tag(["2.0.0", "2.1.0rc1", "2.1.0"])
+        assert result == "2.1.0"
+
+    def test_non_semver_skipped(self):
+        result = _resolve_newest_tag(["latest", "sha-abc123", "nightly", "1.2.3"])
+        assert result == "1.2.3"
+
+    def test_all_non_semver_returns_none(self):
+        assert _resolve_newest_tag(["latest", "sha-abc123", "nightly"]) is None
+
+    def test_empty_list(self):
+        assert _resolve_newest_tag([]) is None
+
+    def test_single_tag(self):
+        assert _resolve_newest_tag(["3.5.7"]) == "3.5.7"
+
+    def test_calver_style(self):
+        """Calendar-style versions like '2024.1.15' are valid PEP 440."""
+        result = _resolve_newest_tag(["2024.1.15", "2023.12.1", "2024.6.0"])
+        assert result == "2024.6.0"
+
+    def test_four_part_version(self):
+        """Four-part versions like '1.2.3.4' are valid PEP 440 (post-release)."""
+        result = _resolve_newest_tag(["1.2.3.4", "1.2.3.5", "1.2.3"])
+        assert result == "1.2.3.5"
+
+
+# ---------------------------------------------------------------------------
+# Automation engine — _action_rerun_scan target resolution tests
+# ---------------------------------------------------------------------------
+
+from app.services.automation.engine import _resolve_container_target
+from app.services.automation.engine import _split_image_ref
+
+
+class TestSplitImageRef:
+    """Tests for container image reference parsing."""
+
+    def test_simple_name_tag(self):
+        assert _split_image_ref("myimage:latest") == ("myimage", "latest", None)
+
+    def test_simple_name_no_tag(self):
+        assert _split_image_ref("myimage") == ("myimage", None, None)
+
+    def test_registry_with_port_and_tag(self):
+        name, tag, digest = _split_image_ref("registry.example.com:5000/repo:v1.0.0")
+        assert name == "registry.example.com:5000/repo"
+        assert tag == "v1.0.0"
+        assert digest is None
+
+    def test_registry_with_port_no_tag(self):
+        name, tag, digest = _split_image_ref("registry.example.com:5000/repo")
+        assert name == "registry.example.com:5000/repo"
+        assert tag is None
+        assert digest is None
+
+    def test_digest_form(self):
+        ref = "myacr.azurecr.io/app@sha256:abc123def456"
+        name, tag, digest = _split_image_ref(ref)
+        assert name == "myacr.azurecr.io/app"
+        assert tag is None
+        assert digest == "sha256:abc123def456"
+
+    def test_standard_acr_ref(self):
+        name, tag, digest = _split_image_ref("myacr.azurecr.io/services/backend:v2.0.0")
+        assert name == "myacr.azurecr.io/services/backend"
+        assert tag == "v2.0.0"
+        assert digest is None
+
+    def test_nested_repo_path(self):
+        name, tag, digest = _split_image_ref("ghcr.io/org/project/app:1.2.3")
+        assert name == "ghcr.io/org/project/app"
+        assert tag == "1.2.3"
+        assert digest is None
+
+
+class TestActionRerunScanTargetResolution:
+    """Tests for container target resolution in the rerun_scan automation action."""
+
+    def test_resolves_newest_tag(self):
+        """Registry container scan resolves to newest semver tag."""
+        scan = MagicMock()
+        scan.id = "scan-1"
+        scan.target = "myacr.azurecr.io/services/backend:v2.0.0"
+        scan.registry_id = "reg-1"
+        scan.scan_type = "container"
+
+        mock_registry = MagicMock()
+        mock_registry.url = "myacr.azurecr.io"
+        mock_registry.auth_method = "managed_identity"
+        mock_registry.username = None
+        mock_registry.password = None
+
+        db = MagicMock()
+
+        with patch(
+            "app.services.automation.engine.RegistryRepository"
+        ) as MockRegRepo, patch(
+            "app.services.registry.list_tags",
+            return_value=["v2.0.0", "v2.1.0", "v1.9.0", "latest"],
+        ):
+            MockRegRepo.return_value.get.return_value = mock_registry
+            result = _resolve_container_target({}, scan, db)
+
+        assert result == "myacr.azurecr.io/services/backend:v2.1.0"
+
+    def test_fix_version_override(self):
+        """Explicit fix_version in action config overrides live tag lookup."""
+        scan = MagicMock()
+        scan.target = "myacr.azurecr.io/services/backend:v2.0.0"
+        scan.registry_id = "reg-1"
+        db = MagicMock()
+
+        result = _resolve_container_target(
+            {"fix_version": "v3.0.0"}, scan, db
+        )
+        assert result == "myacr.azurecr.io/services/backend:v3.0.0"
+
+    def test_non_registry_scan_returns_original(self):
+        """Scan without registry_id returns original target."""
+        scan = MagicMock()
+        scan.target = "myimage:latest"
+        scan.registry_id = None
+        db = MagicMock()
+
+        result = _resolve_container_target({}, scan, db)
+        assert result == "myimage:latest"
+
+    def test_registry_not_found_falls_back(self):
+        """Falls back to original target when registry not in DB."""
+        scan = MagicMock()
+        scan.id = "scan-1"
+        scan.target = "myacr.azurecr.io/app:v1.0.0"
+        scan.registry_id = "reg-missing"
+        db = MagicMock()
+
+        with patch(
+            "app.services.automation.engine.RegistryRepository"
+        ) as MockRegRepo:
+            MockRegRepo.return_value.get.return_value = None
+            result = _resolve_container_target({}, scan, db)
+
+        assert result == "myacr.azurecr.io/app:v1.0.0"
+
+    def test_list_tags_failure_falls_back(self):
+        """Falls back to original target when list_tags raises."""
+        scan = MagicMock()
+        scan.id = "scan-1"
+        scan.target = "myacr.azurecr.io/app:v1.0.0"
+        scan.registry_id = "reg-1"
+
+        mock_registry = MagicMock()
+        mock_registry.url = "myacr.azurecr.io"
+        mock_registry.auth_method = "managed_identity"
+        mock_registry.username = None
+        mock_registry.password = None
+
+        db = MagicMock()
+
+        with patch(
+            "app.services.automation.engine.RegistryRepository"
+        ) as MockRegRepo, patch(
+            "app.services.registry.list_tags",
+            side_effect=Exception("Registry unreachable"),
+        ):
+            MockRegRepo.return_value.get.return_value = mock_registry
+            result = _resolve_container_target({}, scan, db)
+
+        assert result == "myacr.azurecr.io/app:v1.0.0"
+
+    def test_no_semver_tags_falls_back(self):
+        """Falls back when all tags are non-semver (e.g. 'latest', 'nightly')."""
+        scan = MagicMock()
+        scan.id = "scan-1"
+        scan.target = "myacr.azurecr.io/app:latest"
+        scan.registry_id = "reg-1"
+
+        mock_registry = MagicMock()
+        mock_registry.url = "myacr.azurecr.io"
+        mock_registry.auth_method = "none"
+        mock_registry.username = None
+        mock_registry.password = None
+
+        db = MagicMock()
+
+        with patch(
+            "app.services.automation.engine.RegistryRepository"
+        ) as MockRegRepo, patch(
+            "app.services.registry.list_tags",
+            return_value=["latest", "nightly", "sha-abc123"],
+        ):
+            MockRegRepo.return_value.get.return_value = mock_registry
+            result = _resolve_container_target({}, scan, db)
+
+        assert result == "myacr.azurecr.io/app:latest"
+
+    def test_host_port_registry_resolves_correctly(self):
+        """Registry with host:port format doesn't confuse port for tag."""
+        scan = MagicMock()
+        scan.id = "scan-1"
+        scan.target = "registry.example.com:5000/myapp:v1.0.0"
+        scan.registry_id = "reg-1"
+
+        mock_registry = MagicMock()
+        mock_registry.url = "registry.example.com:5000"
+        mock_registry.auth_method = "username_password"
+        mock_registry.username = "user"
+        mock_registry.password = "pass"
+
+        db = MagicMock()
+
+        with patch(
+            "app.services.automation.engine.RegistryRepository"
+        ) as MockRegRepo, patch(
+            "app.services.registry.list_tags",
+            return_value=["v1.0.0", "v2.0.0"],
+        ):
+            MockRegRepo.return_value.get.return_value = mock_registry
+            result = _resolve_container_target({}, scan, db)
+
+        assert result == "registry.example.com:5000/myapp:v2.0.0"
+
+    def test_fix_version_on_host_port_ref(self):
+        """fix_version override works correctly with host:port registries."""
+        scan = MagicMock()
+        scan.target = "registry.example.com:5000/myapp:v1.0.0"
+        scan.registry_id = "reg-1"
+        db = MagicMock()
+
+        result = _resolve_container_target(
+            {"fix_version": "v3.0.0"}, scan, db
+        )
+        assert result == "registry.example.com:5000/myapp:v3.0.0"
+
+    def test_digest_ref_skips_fix_version(self):
+        """Digest-form references cannot have fix_version applied — returns original."""
+        scan = MagicMock()
+        scan.target = "myacr.azurecr.io/app@sha256:abc123def456"
+        scan.registry_id = "reg-1"
+        db = MagicMock()
+
+        result = _resolve_container_target(
+            {"fix_version": "v2.0.0"}, scan, db
+        )
+        # Cannot apply fix_version to digest ref; falls back to original
+        assert result == "myacr.azurecr.io/app@sha256:abc123def456"

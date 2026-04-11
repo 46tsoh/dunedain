@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, ScanLine, ShieldCheck, FileText, Shield, Settings, Hexagon, Container, FlaskConical, Users } from 'lucide-react';
+import { LayoutDashboard, ScanLine, ShieldCheck, FileText, Shield, Settings, Hexagon, Container, FlaskConical, Users, Ticket, Zap } from 'lucide-react';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -10,6 +10,8 @@ const navItems = [
   { to: '/policies', icon: ShieldCheck, label: 'Policies' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },
   { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/integrations', icon: Ticket, label: 'Integrations' },
+  { to: '/automation', icon: Zap, label: 'Automation' },
   { to: '/seed', icon: FlaskConical, label: 'Seed Scans' },
 ];
 

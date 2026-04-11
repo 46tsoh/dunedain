@@ -101,11 +101,14 @@ class Finding(Base):
     is_fixed = Column(Boolean, default=False, nullable=False)
     reachable = Column(Boolean, default=False, nullable=False)
     exploitable = Column(Boolean, default=False, nullable=False)
+    risk_accepted = Column(Boolean, default=False, nullable=False)
+    risk_accepted_at = Column(DateTime, nullable=True)
     risk_score = Column(Float, default=0.0, nullable=False)
     aliases = Column(JSON, default=list)
     references = Column(JSON, default=list)
 
     scan = relationship("Scan", back_populates="findings")
+    tickets = relationship("Ticket", back_populates="finding")
 
 
 class Policy(Base):
@@ -175,9 +178,18 @@ class Team(Base):
     contact_email = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    # --- Auto-ticketing configuration ---
+    integration_id = Column(String, ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True)
+    auto_create_tickets = Column(Boolean, default=False, nullable=False)
+    ticket_severity_threshold = Column(
+        Enum("CRITICAL", "HIGH", "MEDIUM", "LOW", name="severity_enum", create_type=False),
+        nullable=False,
+        default="HIGH",
+    )
 
     ownership_rules = relationship("OwnershipRule", back_populates="team", cascade="all, delete-orphan")
     scans = relationship("Scan", back_populates="team")
+    integration = relationship("Integration", foreign_keys=[integration_id])
 
 
 class OwnershipRule(Base):
@@ -246,3 +258,170 @@ class AppSetting(Base):
     value = Column(String, nullable=False)
     description = Column(String, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class Integration(Base):
+    __tablename__ = "integrations"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False)
+    provider = Column(
+        Enum("jira", "servicenow", "linear", "github_issues", name="integration_provider_enum", create_type=False),
+        nullable=False,
+    )
+    enabled = Column(Boolean, default=True, nullable=False)
+    base_url = Column(String, nullable=False)
+    auth_method = Column(
+        Enum("basic", "api_token", "oauth2", "pat", name="integration_auth_enum", create_type=False),
+        nullable=False,
+        default="api_token",
+    )
+    auth_username = Column(String, nullable=True)
+    auth_secret = Column(String, nullable=True)
+    provider_config = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    field_mappings = relationship("IntegrationFieldMapping", back_populates="integration", cascade="all, delete-orphan")
+    tickets = relationship("Ticket", back_populates="integration", cascade="all, delete-orphan")
+    webhook_secret = Column(String, nullable=True)  # HMAC secret for webhook verification
+    webhook_registrations = relationship("WebhookRegistration", back_populates="integration", cascade="all, delete-orphan")
+    automation_rules = relationship("AutomationRule", back_populates="integration")
+
+
+class IntegrationFieldMapping(Base):
+    __tablename__ = "integration_field_mappings"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    integration_id = Column(String, ForeignKey("integrations.id"), nullable=False)
+    source = Column(String, nullable=False)
+    target_field = Column(String, nullable=False)
+    transform = Column(String, nullable=True)
+    template_value = Column(String, nullable=True)
+    priority = Column(Integer, default=0, nullable=False)
+
+    integration = relationship("Integration", back_populates="field_mappings")
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+    __table_args__ = (
+        UniqueConstraint("integration_id", "finding_id", name="uq_integration_finding"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    integration_id = Column(String, ForeignKey("integrations.id"), nullable=False)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="SET NULL"), nullable=True)
+    external_id = Column(String, nullable=False, index=True)
+    external_key = Column(String, nullable=False, index=True)
+    external_url = Column(String, nullable=False)
+    external_status = Column(String, nullable=True)
+    summary = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    synced_at = Column(DateTime, nullable=True)
+    external_assignee = Column(String, nullable=True)
+    external_priority = Column(String, nullable=True)
+
+    integration = relationship("Integration", back_populates="tickets")
+    finding = relationship("Finding", back_populates="tickets")
+    comments = relationship("TicketComment", back_populates="ticket", cascade="all, delete-orphan")
+
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    integration_id = Column(String, ForeignKey("integrations.id"), nullable=False)
+    event_type = Column(String, nullable=False)  # e.g. "jira:issue_updated"
+    external_issue_id = Column(String, nullable=True)
+    external_issue_key = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)
+    status = Column(
+        Enum("received", "processing", "processed", "failed", "ignored", name="webhook_event_status_enum", create_type=False),
+        nullable=False,
+        default="received",
+    )
+    error_message = Column(String, nullable=True)
+    received_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+
+    integration = relationship("Integration")
+
+
+class WebhookRegistration(Base):
+    __tablename__ = "webhook_registrations"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    integration_id = Column(String, ForeignKey("integrations.id"), nullable=False, unique=True)
+    external_webhook_id = Column(String, nullable=True)  # ID returned by Jira when registering
+    callback_url = Column(String, nullable=False)
+    jira_events = Column(JSON, default=list)  # e.g. ["jira:issue_updated", "jira:issue_deleted"]
+    secret = Column(String, nullable=True)  # HMAC verification secret
+    is_cloud = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    integration = relationship("Integration", back_populates="webhook_registrations")
+
+
+class TicketComment(Base):
+    __tablename__ = "ticket_comments"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id", "external_comment_id",
+            name="uq_ticket_comment_external",
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    ticket_id = Column(String, ForeignKey("tickets.id"), nullable=False)
+    external_comment_id = Column(String, nullable=True)
+    author = Column(String, nullable=True)
+    body = Column(Text, nullable=False)
+    direction = Column(
+        Enum("inbound", "outbound", name="comment_direction_enum", create_type=False),
+        nullable=False,
+    )
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    ticket = relationship("Ticket", back_populates="comments")
+
+
+class AutomationRule(Base):
+    __tablename__ = "automation_rules"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    trigger = Column(String, nullable=False)  # e.g. "jira_status_changed", "scan_completed"
+    conditions = Column(JSON, default=list)  # list of condition dicts
+    actions = Column(JSON, default=list)  # list of action dicts
+    integration_id = Column(String, ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True)
+    team_id = Column(String, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    execution_count = Column(Integer, default=0, nullable=False)
+    last_executed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    integration = relationship("Integration", back_populates="automation_rules")
+    team = relationship("Team")
+    executions = relationship("AutomationRuleExecution", back_populates="rule", cascade="all, delete-orphan")
+
+
+class AutomationRuleExecution(Base):
+    __tablename__ = "automation_rule_executions"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    rule_id = Column(String, ForeignKey("automation_rules.id"), nullable=False)
+    trigger_event = Column(String, nullable=False)
+    trigger_context = Column(JSON, default=dict)
+    conditions_matched = Column(Boolean, nullable=False)
+    actions_executed = Column(JSON, default=list)  # list of {action_type, success, detail}
+    status = Column(
+        Enum("success", "partial_failure", "failed", "skipped", name="automation_exec_status_enum", create_type=False),
+        nullable=False,
+    )
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    rule = relationship("AutomationRule", back_populates="executions")

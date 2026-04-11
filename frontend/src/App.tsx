@@ -13,6 +13,8 @@ import Registries from './pages/Registries';
 import SeedScans from './pages/SeedScans';
 import Teams from './pages/Teams';
 import TeamDashboard from './pages/TeamDashboard';
+import Integrations from './pages/Integrations';
+import AutomationRules from './pages/AutomationRules';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +43,8 @@ export default function App() {
             <Route path="registries" element={<Registries />} />
             <Route path="teams" element={<Teams />} />
             <Route path="teams/:teamId/dashboard" element={<TeamDashboard />} />
+            <Route path="integrations" element={<Integrations />} />
+            <Route path="automation" element={<AutomationRules />} />
             <Route path="seed" element={<SeedScans />} />
           </Route>
         </Routes>

@@ -58,6 +58,13 @@ const CONTAINER_IMAGES = [
   'curlimages/curl:8.6.0',
   'busybox:1.36',
   'gcr.io/distroless/base-debian12',
+  // Windows (pinned to older builds to ensure CVE findings via MSRC)
+  'mcr.microsoft.com/windows/nanoserver:10.0.17763.6293',   // Server 2019, ~mid-2024
+  'mcr.microsoft.com/windows/nanoserver:10.0.20348.2582',   // Server 2022, ~mid-2023
+  'mcr.microsoft.com/windows/servercore:10.0.17763.3650',   // Server 2019, ~2022
+  'mcr.microsoft.com/windows/servercore:10.0.20348.1547',   // Server 2022, ~2022
+  'mcr.microsoft.com/windows/nanoserver:10.0.17763.3650',   // Server 2019, ~2022
+  'mcr.microsoft.com/windows/servercore:10.0.20348.2582',   // Server 2022, ~mid-2023
 ];
 
 const DEPENDENCY_TARGETS = [

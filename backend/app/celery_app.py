@@ -12,7 +12,7 @@ celery_app = Celery(
     "dunedain",
     broker=BROKER_URL,
     backend=RESULT_BACKEND,
-    include=["app.tasks.scan", "app.tasks.registry_sync", "app.tasks.msrc_refresh"],
+    include=["app.tasks.scan", "app.tasks.registry_sync", "app.tasks.msrc_refresh", "app.tasks.automation"],
 )
 
 celery_app.conf.update(
@@ -32,6 +32,8 @@ celery_app.conf.update(
         "app.tasks.registry_sync.sync_registry": {"queue": "scans"},
         "app.tasks.registry_sync.sync_all_registries": {"queue": "scans"},
         "app.tasks.msrc_refresh.refresh_msrc_cache": {"queue": "scans"},
+        "app.tasks.automation.process_webhook_event": {"queue": "scans"},
+        "app.tasks.automation.fire_internal_event": {"queue": "scans"},
     },
     beat_schedule={
         "sync-all-registries-every-5-minutes": {
