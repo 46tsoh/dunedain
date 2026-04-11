@@ -7,7 +7,27 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import AuditLog, Finding, OwnershipRule, Policy, PolicyResult, AppSetting, Registry, Scan, SBOM, Team, VulnerabilityInstance
+from ..models import (
+    AutomationRule,
+    AutomationRuleExecution,
+    AppSetting,
+    AuditLog,
+    Finding,
+    Integration,
+    IntegrationFieldMapping,
+    OwnershipRule,
+    Policy,
+    PolicyResult,
+    Registry,
+    Scan,
+    SBOM,
+    Team,
+    Ticket,
+    TicketComment,
+    VulnerabilityInstance,
+    WebhookEvent,
+    WebhookRegistration,
+)
 from .base import BaseRepository
 
 
@@ -373,5 +393,197 @@ class VulnerabilityInstanceRepository(BaseRepository[VulnerabilityInstance]):
             self.db.query(VulnerabilityInstance)
             .filter(VulnerabilityInstance.team_id == team_id)
             .order_by(VulnerabilityInstance.risk_score.desc())
+            .all()
+        )
+
+
+class IntegrationRepository(BaseRepository[Integration]):
+    model = Integration
+
+    def list_all(self) -> list[Integration]:
+        return self.list(order_by=Integration.created_at.desc())
+
+    def list_enabled(self, provider: str | None = None) -> list[Integration]:
+        filters = [Integration.enabled == True]  # noqa: E712
+        if provider:
+            filters.append(Integration.provider == provider)
+        return self.db.query(Integration).filter(*filters).all()
+
+
+class IntegrationFieldMappingRepository(BaseRepository[IntegrationFieldMapping]):
+    model = IntegrationFieldMapping
+
+    def for_integration(self, integration_id: str) -> list[IntegrationFieldMapping]:
+        return (
+            self.db.query(IntegrationFieldMapping)
+            .filter(IntegrationFieldMapping.integration_id == integration_id)
+            .order_by(IntegrationFieldMapping.priority.asc())
+            .all()
+        )
+
+    def replace_for_integration(
+        self, integration_id: str, mappings: list[IntegrationFieldMapping],
+    ) -> list[IntegrationFieldMapping]:
+        self.db.query(IntegrationFieldMapping).filter(
+            IntegrationFieldMapping.integration_id == integration_id
+        ).delete(synchronize_session=False)
+        self.db.add_all(mappings)
+        self.db.flush()
+        return mappings
+
+
+class TicketRepository(BaseRepository[Ticket]):
+    model = Ticket
+
+    def for_integration(self, integration_id: str, *, limit: int = 200) -> list[Ticket]:
+        return (
+            self.db.query(Ticket)
+            .filter(Ticket.integration_id == integration_id)
+            .order_by(Ticket.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def find_by_external_id(self, integration_id: str, external_id: str) -> Ticket | None:
+        return (
+            self.db.query(Ticket)
+            .filter(Ticket.integration_id == integration_id, Ticket.external_id == external_id)
+            .first()
+        )
+
+    def find_by_external_key(self, integration_id: str, external_key: str) -> Ticket | None:
+        return (
+            self.db.query(Ticket)
+            .filter(Ticket.integration_id == integration_id, Ticket.external_key == external_key)
+            .first()
+        )
+
+    def for_finding(self, finding_id: str) -> list[Ticket]:
+        return self.db.query(Ticket).filter(Ticket.finding_id == finding_id).all()
+
+    def exists_for_integration_and_finding(self, integration_id: str, finding_id: str) -> bool:
+        return (
+            self.db.query(Ticket)
+            .filter(Ticket.integration_id == integration_id, Ticket.finding_id == finding_id)
+            .first()
+        ) is not None
+
+    def bulk_check_existing(self, integration_id: str, finding_ids: list[str]) -> set[str]:
+        rows = (
+            self.db.query(Ticket.finding_id)
+            .filter(Ticket.integration_id == integration_id, Ticket.finding_id.in_(finding_ids))
+            .all()
+        )
+        return {r[0] for r in rows}
+
+
+class WebhookEventRepository(BaseRepository[WebhookEvent]):
+    model = WebhookEvent
+
+    def list_for_integration(
+        self,
+        integration_id: str,
+        *,
+        skip: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+    ) -> list[WebhookEvent]:
+        filters = [WebhookEvent.integration_id == integration_id]
+        if status:
+            filters.append(WebhookEvent.status == status)
+        return self.list(
+            skip=skip,
+            limit=limit,
+            order_by=WebhookEvent.received_at.desc(),
+            filters=filters,
+        )
+
+    def pending_events(self, limit: int = 100) -> list[WebhookEvent]:
+        return (
+            self.db.query(WebhookEvent)
+            .filter(WebhookEvent.status == "received")
+            .order_by(WebhookEvent.received_at.asc())
+            .limit(limit)
+            .all()
+        )
+
+
+class WebhookRegistrationRepository(BaseRepository[WebhookRegistration]):
+    model = WebhookRegistration
+
+    def for_integration(self, integration_id: str) -> WebhookRegistration | None:
+        return (
+            self.db.query(WebhookRegistration)
+            .filter(WebhookRegistration.integration_id == integration_id)
+            .first()
+        )
+
+
+class TicketCommentRepository(BaseRepository[TicketComment]):
+    model = TicketComment
+
+    def for_ticket(self, ticket_id: str) -> list[TicketComment]:
+        return (
+            self.db.query(TicketComment)
+            .filter(TicketComment.ticket_id == ticket_id)
+            .order_by(TicketComment.created_at.asc())
+            .all()
+        )
+
+    def exists_by_external_id(self, ticket_id: str, external_comment_id: str) -> bool:
+        return (
+            self.db.query(TicketComment)
+            .filter(
+                TicketComment.ticket_id == ticket_id,
+                TicketComment.external_comment_id == external_comment_id,
+            )
+            .first()
+        ) is not None
+
+
+class AutomationRuleRepository(BaseRepository[AutomationRule]):
+    model = AutomationRule
+
+    def list_all(self) -> list[AutomationRule]:
+        return self.list(order_by=AutomationRule.created_at.desc())
+
+    def list_enabled(self, *, trigger: str | None = None) -> list[AutomationRule]:
+        filters = [AutomationRule.enabled == True]  # noqa: E712
+        if trigger:
+            filters.append(AutomationRule.trigger == trigger)
+        return self.db.query(AutomationRule).filter(*filters).all()
+
+    def for_integration(self, integration_id: str) -> list[AutomationRule]:
+        return (
+            self.db.query(AutomationRule)
+            .filter(AutomationRule.integration_id == integration_id)
+            .order_by(AutomationRule.created_at.desc())
+            .all()
+        )
+
+    def increment_execution(self, rule_id: str) -> None:
+        rule = self.get(rule_id)
+        if rule:
+            rule.execution_count = (rule.execution_count or 0) + 1
+            rule.last_executed_at = datetime.now(timezone.utc)
+
+
+class AutomationRuleExecutionRepository(BaseRepository[AutomationRuleExecution]):
+    model = AutomationRuleExecution
+
+    def for_rule(self, rule_id: str, *, limit: int = 50) -> list[AutomationRuleExecution]:
+        return (
+            self.db.query(AutomationRuleExecution)
+            .filter(AutomationRuleExecution.rule_id == rule_id)
+            .order_by(AutomationRuleExecution.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def recent(self, *, limit: int = 50) -> list[AutomationRuleExecution]:
+        return (
+            self.db.query(AutomationRuleExecution)
+            .order_by(AutomationRuleExecution.created_at.desc())
+            .limit(limit)
             .all()
         )

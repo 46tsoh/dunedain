@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Users, Plus, Trash2, Shield, Globe } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Globe, Zap } from 'lucide-react';
 import { getTeams, createTeam, updateTeam, deleteTeam, createOwnershipRule, deleteOwnershipRule } from '../api/teams';
+import { getIntegrations } from '../api/integrations';
 import type { Team, OwnershipRule } from '../types';
 import { formatDate } from '../utils';
 
@@ -47,18 +48,25 @@ const btnDanger = {
 export default function Teams() {
   const queryClient = useQueryClient();
   const { data: teams, isLoading, error } = useQuery({ queryKey: ['teams'], queryFn: getTeams });
+  const { data: integrations } = useQuery({ queryKey: ['integrations'], queryFn: getIntegrations });
 
   // --- Create Team modal state ---
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newIntegrationId, setNewIntegrationId] = useState<string | null>(null);
+  const [newAutoTickets, setNewAutoTickets] = useState(false);
+  const [newSevThreshold, setNewSevThreshold] = useState('HIGH');
 
   // --- Edit Team state ---
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editIntegrationId, setEditIntegrationId] = useState<string | null>(null);
+  const [editAutoTickets, setEditAutoTickets] = useState(false);
+  const [editSevThreshold, setEditSevThreshold] = useState('HIGH');
 
   // --- Add Rule state ---
   const [ruleTeamId, setRuleTeamId] = useState<string | null>(null);
@@ -93,7 +101,7 @@ export default function Teams() {
   });
 
   function resetCreate() {
-    setNewName(''); setNewDesc(''); setNewEmail('');
+    setNewName(''); setNewDesc(''); setNewEmail(''); setNewIntegrationId(null); setNewAutoTickets(false); setNewSevThreshold('HIGH');
   }
   function resetRule() {
     setRulePattern(''); setRuleScanType(''); setRulePriority('0'); setRuleDesc('');
@@ -104,6 +112,9 @@ export default function Teams() {
     setEditName(team.name);
     setEditDesc(team.description || '');
     setEditEmail(team.contact_email || '');
+    setEditIntegrationId(team.integration_id);
+    setEditAutoTickets(team.auto_create_tickets);
+    setEditSevThreshold(team.ticket_severity_threshold || 'HIGH');
   }
 
   function handleCreate() {
@@ -111,6 +122,9 @@ export default function Teams() {
       name: newName,
       description: newDesc || undefined,
       contact_email: newEmail || undefined,
+      integration_id: newIntegrationId,
+      auto_create_tickets: newAutoTickets,
+      ticket_severity_threshold: newSevThreshold,
     });
   }
 
@@ -122,6 +136,9 @@ export default function Teams() {
         name: editName,
         description: editDesc || undefined,
         contact_email: editEmail || undefined,
+        integration_id: editIntegrationId,
+        auto_create_tickets: editAutoTickets,
+        ticket_severity_threshold: editSevThreshold,
       },
     });
   }
@@ -173,6 +190,43 @@ export default function Teams() {
                 <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Contact Email</label>
                 <input style={inputStyle} value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="team@example.com" />
               </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Ticketing Integration</label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={newIntegrationId || ''}
+                  onChange={e => setNewIntegrationId(e.target.value || null)}
+                >
+                  <option value="">None</option>
+                  {(integrations || []).filter(integration => integration.enabled).map(integration => (
+                    <option key={integration.id} value={integration.id}>{integration.name}</option>
+                  ))}
+                </select>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={newAutoTickets}
+                  onChange={e => setNewAutoTickets(e.target.checked)}
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                Auto-create tickets on scan completion
+              </label>
+              {newAutoTickets && (
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Minimum Severity for Tickets</label>
+                  <select
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                    value={newSevThreshold}
+                    onChange={e => setNewSevThreshold(e.target.value)}
+                  >
+                    <option value="CRITICAL">Critical only</option>
+                    <option value="HIGH">High + Critical</option>
+                    <option value="MEDIUM">Medium and above</option>
+                    <option value="LOW">Low and above</option>
+                  </select>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button style={{ ...btnDanger, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => { setShowCreate(false); resetCreate(); }}>Cancel</button>
@@ -200,6 +254,43 @@ export default function Teams() {
                 <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Contact Email</label>
                 <input style={inputStyle} value={editEmail} onChange={e => setEditEmail(e.target.value)} />
               </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Ticketing Integration</label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={editIntegrationId || ''}
+                  onChange={e => setEditIntegrationId(e.target.value || null)}
+                >
+                  <option value="">None</option>
+                  {(integrations || []).filter(integration => integration.enabled).map(integration => (
+                    <option key={integration.id} value={integration.id}>{integration.name}</option>
+                  ))}
+                </select>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editAutoTickets}
+                  onChange={e => setEditAutoTickets(e.target.checked)}
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                Auto-create tickets on scan completion
+              </label>
+              {editAutoTickets && (
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Minimum Severity for Tickets</label>
+                  <select
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                    value={editSevThreshold}
+                    onChange={e => setEditSevThreshold(e.target.value)}
+                  >
+                    <option value="CRITICAL">Critical only</option>
+                    <option value="HIGH">High + Critical</option>
+                    <option value="MEDIUM">Medium and above</option>
+                    <option value="LOW">Low and above</option>
+                  </select>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button style={{ ...btnDanger, color: 'var(--text-secondary)', borderColor: 'var(--border)' }} onClick={() => setEditingTeam(null)}>Cancel</button>
@@ -279,6 +370,21 @@ export default function Teams() {
                       fontSize: 11,
                       color: 'var(--text-secondary)',
                     }}>{team.scan_count} scans</span>
+                    {team.auto_create_tickets && (
+                      <span style={{
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--accent)',
+                        borderRadius: 10,
+                        padding: '1px 8px',
+                        fontSize: 11,
+                        color: 'var(--accent)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}>
+                        <Zap size={11} /> Auto-tickets → {team.integration_name || 'Unknown'} (≥{team.ticket_severity_threshold})
+                      </span>
+                    )}
                   </div>
                   {team.description && <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4 }}>{team.description}</p>}
                   {team.contact_email && <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 2 }}>{team.contact_email}</p>}

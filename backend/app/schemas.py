@@ -376,6 +376,9 @@ class TeamBase(BaseModel):
     name: str
     description: Optional[str] = None
     contact_email: Optional[str] = None
+    integration_id: Optional[str] = None
+    auto_create_tickets: bool = False
+    ticket_severity_threshold: str = "HIGH"
 
 
 class TeamCreate(TeamBase):
@@ -386,6 +389,9 @@ class TeamUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     contact_email: Optional[str] = None
+    integration_id: Optional[str] = None
+    auto_create_tickets: Optional[bool] = None
+    ticket_severity_threshold: Optional[str] = None
 
 
 class TeamRead(TeamBase):
@@ -394,6 +400,7 @@ class TeamRead(TeamBase):
     updated_at: datetime
     ownership_rules: list[OwnershipRuleRead] = Field(default_factory=list)
     scan_count: int = 0
+    integration_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -432,3 +439,235 @@ class TeamDashboardReport(BaseModel):
     low_count: int = 0
     sla_violations: int = 0
     findings: list[TeamFindingSummary] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Integration (Ticketing)
+# ---------------------------------------------------------------------------
+
+class IntegrationFieldMappingBase(BaseModel):
+    source: str
+    target_field: str
+    transform: Optional[str] = None
+    template_value: Optional[str] = None
+    priority: int = 0
+
+
+class IntegrationFieldMappingCreate(IntegrationFieldMappingBase):
+    pass
+
+
+class IntegrationFieldMappingRead(IntegrationFieldMappingBase):
+    id: str
+    integration_id: str
+    model_config = {"from_attributes": True}
+
+
+class IntegrationBase(BaseModel):
+    name: str
+    provider: str
+    enabled: bool = True
+    base_url: str
+    auth_method: str = "api_token"
+    provider_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class IntegrationCreate(IntegrationBase):
+    auth_username: Optional[str] = None
+    auth_secret: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    field_mappings: list[IntegrationFieldMappingCreate] = Field(default_factory=list)
+
+
+class IntegrationUpdate(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    base_url: Optional[str] = None
+    auth_method: Optional[str] = None
+    auth_username: Optional[str] = None
+    auth_secret: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    provider_config: Optional[dict[str, Any]] = None
+    field_mappings: Optional[list[IntegrationFieldMappingCreate]] = None
+
+
+class IntegrationRead(IntegrationBase):
+    id: str
+    auth_username: Optional[str] = None
+    has_secret: bool = False
+    has_webhook_secret: bool = False
+    created_at: datetime
+    updated_at: datetime
+    field_mappings: list[IntegrationFieldMappingRead] = Field(default_factory=list)
+    model_config = {"from_attributes": True}
+
+
+class TicketRead(BaseModel):
+    id: str
+    integration_id: str
+    finding_id: Optional[str] = None
+    external_id: str
+    external_key: str
+    external_url: str
+    external_status: Optional[str] = None
+    summary: str
+    created_at: datetime
+    synced_at: Optional[datetime] = None
+    external_assignee: Optional[str] = None
+    external_priority: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
+class CreateTicketRequest(BaseModel):
+    integration_id: str
+    finding_id: str
+    field_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class BulkCreateTicketsRequest(BaseModel):
+    integration_id: str
+    finding_ids: list[str]
+    field_overrides: dict[str, Any] = Field(default_factory=dict)
+    skip_existing: bool = True
+
+
+class BulkCreateTicketsResponse(BaseModel):
+    created: list[TicketRead]
+    skipped: list[str]
+    errors: list[dict[str, str]]
+
+
+class TestIntegrationResponse(BaseModel):
+    success: bool
+    message: str
+    projects: Optional[list[dict[str, str]]] = None
+
+
+# ---------------------------------------------------------------------------
+# Webhook Events
+# ---------------------------------------------------------------------------
+
+class WebhookEventRead(BaseModel):
+    id: str
+    integration_id: str
+    event_type: str
+    external_issue_id: Optional[str] = None
+    external_issue_key: Optional[str] = None
+    status: str
+    error_message: Optional[str] = None
+    received_at: datetime
+    processed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WebhookEventDetail(WebhookEventRead):
+    payload: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Webhook Registration
+# ---------------------------------------------------------------------------
+
+class WebhookRegistrationCreate(BaseModel):
+    callback_url: str
+    jira_events: list[str] = Field(default_factory=lambda: [
+        "jira:issue_updated",
+        "jira:issue_deleted",
+        "comment_created",
+        "comment_updated",
+    ])
+    register_with_jira: bool = True  # attempt auto-registration via Jira API
+    # Provider-agnostic alternatives (used by GitHub Issues and future providers)
+    events: list[str] = Field(default_factory=list)
+    register_with_provider: bool = True  # attempt auto-registration with the provider
+
+
+class WebhookRegistrationRead(BaseModel):
+    id: str
+    integration_id: str
+    external_webhook_id: Optional[str] = None
+    callback_url: str
+    jira_events: list[str]
+    is_cloud: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Ticket Comments
+# ---------------------------------------------------------------------------
+
+class TicketCommentCreate(BaseModel):
+    body: str
+
+
+class TicketCommentRead(BaseModel):
+    id: str
+    ticket_id: str
+    external_comment_id: Optional[str] = None
+    author: Optional[str] = None
+    body: str
+    direction: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Automation Rules
+# ---------------------------------------------------------------------------
+
+class AutomationRuleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    enabled: bool = True
+    trigger: str  # e.g. "jira_status_changed", "scan_completed"
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    integration_id: Optional[str] = None
+    team_id: Optional[str] = None
+
+
+class AutomationRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    trigger: Optional[str] = None
+    conditions: Optional[list[dict[str, Any]]] = None
+    actions: Optional[list[dict[str, Any]]] = None
+    integration_id: Optional[str] = None
+    team_id: Optional[str] = None
+
+
+class AutomationRuleRead(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    enabled: bool
+    trigger: str
+    conditions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    integration_id: Optional[str] = None
+    team_id: Optional[str] = None
+    execution_count: int = 0
+    last_executed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AutomationRuleExecutionRead(BaseModel):
+    id: str
+    rule_id: str
+    trigger_event: str
+    trigger_context: dict[str, Any]
+    conditions_matched: bool
+    actions_executed: list[dict[str, Any]]
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

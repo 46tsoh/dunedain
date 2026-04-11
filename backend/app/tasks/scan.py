@@ -231,6 +231,60 @@ def run_scan(self, scan_id: str, packages: list[dict] | None = None) -> None:
         ))
         audit_repo.commit()
 
+        # ── Auto-ticketing ────────────────────────────────────────────────
+        try:
+            from ..services.ticketing.auto_tickets import create_tickets_for_scan
+            tickets_created = create_tickets_for_scan(db, scan, db_findings)
+            if tickets_created > 0:
+                logger.info(
+                    "Scan %s: auto-created %d tickets for team %s",
+                    scan.id, tickets_created, scan.team_id,
+                )
+        except Exception:
+            logger.exception("Auto-ticketing failed for scan %s", scan.id)
+
+        # ── Fire automation events ────────────────────────────────────────
+        try:
+            from .automation import fire_internal_event
+
+            # Fire scan_completed event
+            event_context = {
+                "scan_id": scan.id,
+                "scan_type": scan.scan_type,
+                "target": scan.target,
+                "scanner_engine": engine,
+                "findings_count": len(db_findings),
+                "team_id": scan.team_id,
+            }
+            # Add severity counts to context
+            sev_counts: dict[str, int] = {}
+            for f in db_findings:
+                sev_counts[f.severity] = sev_counts.get(f.severity, 0) + 1
+            event_context["severity_counts"] = sev_counts
+            if sev_counts.get("CRITICAL", 0) > 0:
+                event_context["severity"] = "CRITICAL"
+            elif sev_counts.get("HIGH", 0) > 0:
+                event_context["severity"] = "HIGH"
+
+            fire_internal_event.delay("scan_completed", event_context)
+
+            # Fire policy_violated for any blocking failures
+            for pr in db.query(PolicyResult).filter(
+                PolicyResult.scan_id == scan.id,
+                PolicyResult.passed == False,  # noqa: E712
+            ).all():
+                policy = policy_repo.get(pr.policy_id)
+                if policy and policy.action == "block":
+                    fire_internal_event.delay("policy_violated", {
+                        "scan_id": scan.id,
+                        "policy_id": policy.id,
+                        "policy_name": policy.name,
+                        "team_id": scan.team_id,
+                        "violations_count": len(pr.violations or []),
+                    })
+        except Exception:
+            logger.exception("Automation event firing failed for scan %s", scan.id)
+
     except Exception:
         try:
             db.rollback()  # clear any dirty session state before re-fetching

@@ -170,6 +170,10 @@ interface Team {
   name: string;
   description: string | null;
   contact_email: string | null;
+  integration_id: string | null;
+  auto_create_tickets: boolean;
+  ticket_severity_threshold: string;
+  integration_name: string | null;
   created_at: string;
   updated_at: string;
   ownership_rules: OwnershipRule[];
@@ -207,4 +211,132 @@ interface TeamDashboardData {
   findings: TeamFindingSummary[];
 }
 
-export type { Scan, Finding, Policy, PolicyRule, DashboardData, SBOMComponent, SBOM, PolicyResult, AuditLogEntry, OsvVulnerability, OsvAffectedPackage, Registry, Team, OwnershipRule, TeamFindingSummary, TeamDashboardData };
+export interface IntegrationFieldMapping {
+  id: string;
+  integration_id: string;
+  source: string;
+  target_field: string;
+  transform: string | null;
+  template_value: string | null;
+  priority: number;
+}
+
+export interface Integration {
+  id: string;
+  name: string;
+  provider: 'jira' | 'servicenow' | 'linear' | 'github_issues';
+  enabled: boolean;
+  base_url: string;
+  auth_method: string;
+  auth_username: string | null;
+  has_secret: boolean;
+  has_webhook_secret: boolean;
+  provider_config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  field_mappings: IntegrationFieldMapping[];
+}
+
+export interface Ticket {
+  id: string;
+  integration_id: string;
+  finding_id: string | null;
+  external_id: string;
+  external_key: string;
+  external_url: string;
+  external_status: string | null;
+  external_assignee: string | null;
+  external_priority: string | null;
+  summary: string;
+  created_at: string;
+  synced_at: string | null;
+}
+
+export interface BulkCreateTicketsResponse {
+  created: Ticket[];
+  skipped: string[];
+  errors: Array<{ finding_id: string; error: string }>;
+}
+
+export interface WebhookEvent {
+  id: string;
+  integration_id: string;
+  event_type: string;
+  external_issue_id: string | null;
+  external_issue_key: string | null;
+  status: string;
+  error_message: string | null;
+  received_at: string;
+  processed_at: string | null;
+}
+
+export interface WebhookEventDetail extends WebhookEvent {
+  payload: Record<string, unknown>;
+}
+
+export interface WebhookRegistration {
+  id: string;
+  integration_id: string;
+  external_webhook_id: string | null;
+  callback_url: string;
+  jira_events: string[];
+  is_cloud: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TicketComment {
+  id: string;
+  ticket_id: string;
+  external_comment_id: string | null;
+  author: string | null;
+  body: string;
+  direction: 'inbound' | 'outbound';
+  created_at: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  trigger: string;
+  conditions: Array<Record<string, unknown>>;
+  actions: Array<Record<string, unknown>>;
+  integration_id: string | null;
+  team_id: string | null;
+  execution_count: number;
+  last_executed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationRuleExecution {
+  id: string;
+  rule_id: string;
+  trigger_event: string;
+  trigger_context: Record<string, unknown>;
+  conditions_matched: boolean;
+  actions_executed: Array<Record<string, unknown>>;
+  status: string;
+  created_at: string;
+}
+
+export type {
+  Scan,
+  Finding,
+  Policy,
+  PolicyRule,
+  DashboardData,
+  SBOMComponent,
+  SBOM,
+  PolicyResult,
+  AuditLogEntry,
+  OsvVulnerability,
+  OsvAffectedPackage,
+  Registry,
+  Team,
+  OwnershipRule,
+  TeamFindingSummary,
+  TeamDashboardData,
+};

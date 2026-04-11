@@ -1,7 +1,11 @@
 from .base import BaseRepository
 from .repos import (
+    AutomationRuleExecutionRepository,
+    AutomationRuleRepository,
     AuditLogRepository,
     FindingRepository,
+    IntegrationFieldMappingRepository,
+    IntegrationRepository,
     OwnershipRuleRepository,
     PolicyRepository,
     PolicyResultRepository,
@@ -10,13 +14,21 @@ from .repos import (
     ScanRepository,
     SettingRepository,
     TeamRepository,
+    TicketCommentRepository,
+    TicketRepository,
     VulnerabilityInstanceRepository,
+    WebhookEventRepository,
+    WebhookRegistrationRepository,
 )
 
 __all__ = [
     "BaseRepository",
+    "AutomationRuleExecutionRepository",
+    "AutomationRuleRepository",
     "AuditLogRepository",
     "FindingRepository",
+    "IntegrationFieldMappingRepository",
+    "IntegrationRepository",
     "OwnershipRuleRepository",
     "PolicyRepository",
     "PolicyResultRepository",
@@ -25,5 +37,9 @@ __all__ = [
     "ScanRepository",
     "SettingRepository",
     "TeamRepository",
+    "TicketCommentRepository",
+    "TicketRepository",
     "VulnerabilityInstanceRepository",
+    "WebhookEventRepository",
+    "WebhookRegistrationRepository",
 ]

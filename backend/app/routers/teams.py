@@ -42,10 +42,14 @@ def _team_to_read(team: Team) -> TeamRead:
         name=team.name,
         description=team.description,
         contact_email=team.contact_email,
+        integration_id=team.integration_id,
+        auto_create_tickets=team.auto_create_tickets,
+        ticket_severity_threshold=team.ticket_severity_threshold,
         created_at=team.created_at,
         updated_at=team.updated_at,
         ownership_rules=[OwnershipRuleRead.model_validate(r) for r in (team.ownership_rules or [])],
         scan_count=len(team.scans) if team.scans else 0,
+        integration_name=team.integration.name if team.integration else None,
     )
 
 
@@ -89,6 +93,9 @@ def create_team(payload: TeamCreate, db: Session = Depends(get_db)):
         name=payload.name,
         description=payload.description,
         contact_email=payload.contact_email,
+        integration_id=payload.integration_id,
+        auto_create_tickets=payload.auto_create_tickets,
+        ticket_severity_threshold=payload.ticket_severity_threshold,
         created_at=now,
         updated_at=now,
     ))
@@ -121,6 +128,12 @@ def update_team(team_id: str, payload: TeamUpdate, db: Session = Depends(get_db)
         team.description = payload.description
     if payload.contact_email is not None:
         team.contact_email = payload.contact_email
+    if payload.integration_id is not None:
+        team.integration_id = payload.integration_id
+    if payload.auto_create_tickets is not None:
+        team.auto_create_tickets = payload.auto_create_tickets
+    if payload.ticket_severity_threshold is not None:
+        team.ticket_severity_threshold = payload.ticket_severity_threshold
     team.updated_at = datetime.now(timezone.utc)
 
     repo.commit()
